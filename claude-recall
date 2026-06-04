@@ -719,12 +719,14 @@ def cmd_resume(sid_prefix, sessions, transcripts, run=False):
     print(f"  (add --exec to run it directly)\n")
 
 
-def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0, skip_summary=False):
+def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0,
+             skip_summary=False, text_only=False):
     """Pretty-print a session's conversation, collapsing tool noise.
 
     grep:         only show turns matching these terms (highlighted).
-    last:         show only the final N turns (after any grep filter).
+    last:         show only the final N turns (after grep/text-only filters).
     skip_summary: drop auto-generated compaction-summary turns.
+    text_only:    drop turns with no prose (pure tool-call turns).
     """
     sid = _resolve_or_exit(sid_prefix, sessions, transcripts)
     if sid not in transcripts:
@@ -769,6 +771,8 @@ def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0, skip_summary=
         print(f"  Error reading transcript: {e}", file=sys.stderr)
         sys.exit(1)
 
+    if text_only:
+        turns = [tr for tr in turns if tr[1].strip()]
     if terms:
         turns = [tr for tr in turns if tr[1] and any(t in tr[1].lower() for t in terms)]
 
@@ -788,6 +792,8 @@ def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0, skip_summary=
     note = []
     if grep:
         note.append(f"matching: {' '.join(terms)}")
+    if text_only:
+        note.append("text turns only")
     if truncated:
         note.append(f"last {last} of {total} turns")
     if note:
@@ -1067,32 +1073,37 @@ def cmd_prune_empty(sessions, transcripts, dry_run):
     print("  History index preserved — sessions still appear in search results")
 
 
-def cmd_stats(sessions, transcripts):
-    """Show summary statistics."""
+def cmd_stats(session_list, transcripts, scope=""):
+    """Show summary statistics over a (possibly filtered) list of sessions.
+
+    scope: a label like "project=cruisesort" appended to the header when the
+    stats cover a filtered subset rather than everything.
+    """
     projects = defaultdict(int)
     total_msgs = 0
     dates = []
     total_tokens = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}
     total_cost = 0.0
     total_disk = 0
+    on_disk = [s for s in session_list if s["id"] in transcripts]
 
-    for s in sessions.values():
+    for s in session_list:
         projects[project_short_name(s["project"])] += 1
         total_msgs += s["msg_count"]
         if s["first_ts"]:
             dates.append(s["first_ts"])
 
-    for sid in transcripts:
-        total_disk += get_session_dir_size(transcripts, sid)
-        s = sessions[sid]
+    for s in on_disk:
+        total_disk += get_session_dir_size(transcripts, s["id"])
         total_tokens["input"] += s["input_tokens"]
         total_tokens["output"] += s["output_tokens"]
         total_tokens["cache_write"] += s["cache_creation_input_tokens"]
         total_tokens["cache_read"] += s["cache_read_input_tokens"]
         total_cost += estimate_cost(s, s.get("model"))
 
-    print(f"Sessions in history:    {len(sessions)}")
-    print(f"Transcripts on disk:    {len(transcripts)}")
+    label = "Sessions (filtered):" if scope else "Sessions in history: "
+    print(f"{label}   {len(session_list)}" + (f"   [{scope}]" if scope else ""))
+    print(f"Transcripts on disk:    {len(on_disk)}")
     print(f"Total prompts:          {total_msgs}")
     print(f"Disk usage:             {format_size(total_disk)}")
     if dates:
@@ -1114,8 +1125,7 @@ def cmd_stats(sessions, transcripts):
         "input_tokens": total_tokens["input"],
     })
     low_reuse = []
-    for sid in transcripts:
-        s = sessions[sid]
+    for s in on_disk:
         write = s["cache_creation_input_tokens"]
         if write >= 50_000 and cache_reuse_ratio(s) < 0.5:
             low_reuse.append((write - s["cache_read_input_tokens"], s))
@@ -1134,6 +1144,74 @@ def cmd_stats(sessions, transcripts):
     print(f"\nBy project:")
     for proj, count in sorted(projects.items(), key=lambda x: -x[1]):
         print(f"  {count:>4}  {proj}")
+
+
+def filter_sessions(sessions, transcripts, args):
+    """Apply search + filters from args. Returns (results_list, snippets)."""
+    results = list(sessions.values())
+    snippets = {}
+
+    # Search — space-separated terms, AND by default (--any for OR)
+    if args.search:
+        terms = parse_terms(args.search)
+        text_matches = set()
+        for sid, s in sessions.items():
+            hay = " ".join(s["messages"] + [s.get("name", ""), s.get("project", "")])
+            if terms_match(hay, terms, args.any):
+                text_matches.add(sid)
+                snip = first_snippet(s["messages"], terms)
+                if snip:
+                    snippets[sid] = snip
+        if args.full_text:
+            for sid, snip in search_transcripts(terms, transcripts, args.any).items():
+                text_matches.add(sid)
+                snippets.setdefault(sid, snip)
+        results = [s for s in results if s["id"] in text_matches]
+
+    if args.project:
+        pf = args.project.lower()
+        results = [s for s in results if pf in project_short_name(s.get("project", "")).lower()]
+
+    if args.branch:
+        bf = args.branch.lower()
+        results = [s for s in results if bf in (s.get("git_branch", "") or "").lower()]
+
+    if args.date:
+        results = [s for s in results if format_timestamp(s["first_ts"]).startswith(args.date)]
+
+    if args.since:
+        cutoff = parse_when(args.since)
+        if cutoff is None:
+            print(f"Could not parse --since '{args.since}' (try 7d, 24h, 2w, or YYYY-MM-DD)", file=sys.stderr)
+            sys.exit(1)
+        results = [s for s in results if s.get("last_ts", 0) >= cutoff]
+
+    if args.until:
+        cutoff = parse_when(args.until)
+        if cutoff is None:
+            print(f"Could not parse --until '{args.until}' (try 7d, 24h, 2w, or YYYY-MM-DD)", file=sys.stderr)
+            sys.exit(1)
+        results = [s for s in results if s.get("last_ts", 0) <= cutoff]
+
+    return results, snippets
+
+
+def filters_scope(args):
+    """Short label describing active filters, for the stats header (or "")."""
+    parts = []
+    if args.search:
+        parts.append(("any:" if args.any else "all:") + args.search)
+    if args.project:
+        parts.append(f"project={args.project}")
+    if args.branch:
+        parts.append(f"branch={args.branch}")
+    if args.date:
+        parts.append(f"date={args.date}")
+    if args.since:
+        parts.append(f"since={args.since}")
+    if args.until:
+        parts.append(f"until={args.until}")
+    return ", ".join(parts)
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -1203,6 +1281,7 @@ def main():
     parser.add_argument("--grep", metavar="TERMS", help="With --show, only show turns matching these terms")
     parser.add_argument("--last", type=int, default=0, metavar="N", help="With --show, only the final N turns")
     parser.add_argument("--no-summary", action="store_true", help="With --show, skip compaction-summary turns")
+    parser.add_argument("--text-only", action="store_true", help="With --show, only turns with prose (drop tool-only turns)")
     parser.add_argument(
         "--resume", metavar="ID",
         help="Print the command to resume a session (cd + claude --resume) by ID prefix",
@@ -1246,7 +1325,7 @@ def main():
 
     if args.show:
         cmd_show(args.show, sessions, transcripts, grep=args.grep,
-                 last=args.last, skip_summary=args.no_summary)
+                 last=args.last, skip_summary=args.no_summary, text_only=args.text_only)
         return
 
     if args.resume:
@@ -1265,64 +1344,13 @@ def main():
         cmd_prune_empty(sessions, transcripts, args.dry_run)
         return
 
+    # ── Build result set (search + filters; stats respects these) ──
+
+    results, snippets = filter_sessions(sessions, transcripts, args)
+
     if args.stats:
-        cmd_stats(sessions, transcripts)
+        cmd_stats(results, transcripts, scope=filters_scope(args))
         return
-
-    # ── Build result set ──
-
-    results = list(sessions.values())
-    snippets = {}
-
-    # Search — space-separated terms, AND by default (--any for OR)
-    if args.search:
-        terms = parse_terms(args.search)
-        text_matches = set()
-        for sid, s in sessions.items():
-            hay = " ".join(s["messages"] + [s.get("name", ""), s.get("project", "")])
-            if terms_match(hay, terms, args.any):
-                text_matches.add(sid)
-                snip = first_snippet(s["messages"], terms)
-                if snip:
-                    snippets[sid] = snip
-
-        if args.full_text:
-            for sid, snip in search_transcripts(terms, transcripts, args.any).items():
-                text_matches.add(sid)
-                snippets.setdefault(sid, snip)
-
-        results = [s for s in results if s["id"] in text_matches]
-
-    # Filters
-    if args.project:
-        proj_filter = args.project.lower()
-        results = [
-            s for s in results
-            if proj_filter in project_short_name(s.get("project", "")).lower()
-        ]
-
-    if args.branch:
-        branch_filter = args.branch.lower()
-        results = [s for s in results if branch_filter in (s.get("git_branch", "") or "").lower()]
-
-    if args.date:
-        results = [
-            s for s in results if format_timestamp(s["first_ts"]).startswith(args.date)
-        ]
-
-    if args.since:
-        cutoff = parse_when(args.since)
-        if cutoff is None:
-            print(f"Could not parse --since '{args.since}' (try 7d, 24h, 2w, or YYYY-MM-DD)", file=sys.stderr)
-            sys.exit(1)
-        results = [s for s in results if s.get("last_ts", 0) >= cutoff]
-
-    if args.until:
-        cutoff = parse_when(args.until)
-        if cutoff is None:
-            print(f"Could not parse --until '{args.until}' (try 7d, 24h, 2w, or YYYY-MM-DD)", file=sys.stderr)
-            sys.exit(1)
-        results = [s for s in results if s.get("last_ts", 0) <= cutoff]
 
     # Sorting
     if args.sort == "date":

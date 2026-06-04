@@ -72,9 +72,10 @@ claude-recall --show cf21fedb
 claude-recall --show cf21fedb --grep "timeout"   # only turns mentioning "timeout", highlighted
 claude-recall --show cf21fedb --last 10          # just the final 10 turns
 claude-recall --show cf21fedb --no-summary       # skip auto-generated compaction recaps
+claude-recall --show cf21fedb --text-only        # drop tool-only turns (prose only)
 ```
 
-For a long session, `--last N` ("what was I doing at the end of this?") and `--grep` are the way in — a full dump of an 800-prompt session is tens of thousands of lines. `--no-summary` hides the "session continued from a previous conversation" recap turns that compaction inserts.
+For a long session, `--last N` ("what was I doing at the end of this?") and `--grep` are the way in — a full dump of an 800-prompt session is tens of thousands of lines. Consecutive assistant messages (prose + their tool calls) are merged into one turn, and repeated tools collapse to `Bash ×3`. `--no-summary` hides the "session continued from a previous conversation" recap turns; `--text-only` drops any turn with no prose.
 
 ### Filter by project, branch, or time
 
@@ -216,8 +217,13 @@ claude-recall --prune-empty
 ### Statistics
 
 ```bash
-claude-recall --stats
+claude-recall --stats                          # everything
+claude-recall --stats --project cruisesort     # just one project
+claude-recall --stats --since 30d              # just the last 30 days
+claude-recall --stats -s "deploy"              # just sessions matching a search
 ```
+
+`--stats` honors the same search and filters as the listing, so you can answer "how much did I spend on _project X_?" or "what did this month cost?" The header notes the active scope.
 
 ```
 Sessions in history:    83
@@ -300,6 +306,7 @@ claude-recall --detail --project ete -n 3
 | `--grep TERMS` | With `--show`, only matching turns (highlighted) | |
 | `--last N` | With `--show`, only the final N turns | |
 | `--no-summary` | With `--show`, skip compaction-summary turns | |
+| `--text-only` | With `--show`, only turns with prose (drop tool-only) | |
 | `--resume ID` | Print the command to resume a session (with `cd`) | |
 | `--exec` | With `--resume`, run the command instead of printing | |
 | `--set-name ID NAME` | Assign a name to a session | |
