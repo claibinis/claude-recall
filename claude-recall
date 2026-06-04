@@ -1271,8 +1271,8 @@ def main():
     parser.add_argument("-n", "--limit", type=int, default=0, help="Limit results")
     parser.add_argument("--reverse", action="store_true", help="Show oldest first")
     parser.add_argument(
-        "--sort", choices=["date", "tokens", "cost", "size", "messages"],
-        default="date", help="Sort order (default: date)",
+        "--sort", choices=["date", "recent", "tokens", "cost", "size", "messages"],
+        default="date", help="Sort order (default: date; 'recent' = last activity)",
     )
 
     # Actions
@@ -1355,6 +1355,8 @@ def main():
     # Sorting
     if args.sort == "date":
         results.sort(key=lambda x: x["first_ts"], reverse=not args.reverse)
+    elif args.sort == "recent":
+        results.sort(key=lambda x: x.get("last_ts", 0), reverse=not args.reverse)
     elif args.sort == "messages":
         results.sort(key=lambda x: x["msg_count"], reverse=not args.reverse)
     elif args.sort in ("tokens", "cost", "size"):

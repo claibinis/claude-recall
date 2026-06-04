@@ -300,7 +300,7 @@ claude-recall --detail --project ete -n 3
 | **Listing** |
 | `-n`, `--limit` | Limit number of results | |
 | `--reverse` | Show oldest first | |
-| `--sort` | Sort by: `date`, `tokens`, `cost`, `size`, `messages` | |
+| `--sort` | Sort by: `date` (start), `recent` (last activity), `tokens`, `cost`, `size`, `messages` | |
 | **Actions** |
 | `--show ID` | Print a session's conversation | |
 | `--grep TERMS` | With `--show`, only matching turns (highlighted) | |
