@@ -1,0 +1,6 @@
+# Local FewWord scratch/memory (machine-local)
+.fewword/
+
+# Python
+__pycache__/
+*.pyc

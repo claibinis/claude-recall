@@ -1,0 +1,345 @@
+# claude-recall
+
+> Total recall for your Claude Code conversations.
+
+Search, analyze, and manage your Claude Code session history. Find that conversation you had three weeks ago, see how many tokens you've burned, and clean up old transcripts eating your disk.
+
+## Why?
+
+Claude Code's built-in `/resume` only searches by session name or exact ID. If you didn't name a session (and let's be honest — you didn't), it's gone into the void. `claude-recall` indexes everything in `~/.claude/` and lets you find sessions by keyword, project, date, token usage, or disk size.
+
+## Installation
+
+```bash
+# Clone it
+git clone https://github.com/claibinis/claude-recall.git
+cd claude-recall
+
+# Option A: symlink both tools to your PATH
+ln -s "$(pwd)/claude-recall" ~/bin/claude-recall
+ln -s "$(pwd)/cc" ~/bin/cc
+
+# Option B: copy them
+cp claude-recall cc ~/bin/
+
+# Option C: just run directly
+./claude-recall
+```
+
+**Requirements:** Python 3.6+ (no external dependencies). The `cc` wrapper requires zsh.
+
+## Usage
+
+### List all sessions
+
+```bash
+claude-recall
+```
+
+```
+Claude Code Sessions (83 of 83)  [+ = transcript on disk, - = history only]
+
+  2026-06-02 09:44  [cf21fedb] +  (  4 msgs)  laibinis          find sessions
+  2026-06-01 12:48  [9e29a7a6] +  ( 24 msgs)  laibinis          how long could one live on...
+  2026-05-28 07:23  [654f5fb5] +  ( 50 msgs)  laibinis          why does the build fail when...
+  ...
+```
+
+The `+`/`-` indicator shows whether the full transcript file is still on disk or only the message index remains.
+
+### Search by keyword
+
+```bash
+claude-recall -s "deployment"
+claude-recall -s "GPU provisioning"
+```
+
+Searches message content and project names. Add `-f` for full-text search through transcript files (slower but catches assistant responses too):
+
+```bash
+claude-recall -s "foo" -f
+```
+
+### Filter by project or date
+
+```bash
+claude-recall --project ete-tools
+claude-recall --date 2026-04
+claude-recall --date 2026-04-02
+```
+
+### Token usage and cost
+
+```bash
+# Show cost estimate inline
+claude-recall --tokens -n 10
+
+# Detailed breakdown per session
+claude-recall --tokens --detail -n 5
+
+# Sort by cost (most expensive first)
+claude-recall --tokens --sort cost
+```
+
+```
+Detailed Token Usage:
+
+  Session: 654f5fb5  |  Model: claude-opus-4-6
+  Input:                     264
+  Output:                 43.2K
+  Cache write:           733.3K
+  Cache read:              5.2M
+  Peak context:            5.9M
+  API turns:                 50
+  Est. cost:             $10.98
+```
+
+### Peak context window
+
+See which sessions pushed the context limit:
+
+```bash
+claude-recall --context -n 10
+```
+
+Sessions exceeding 180K tokens are flagged with ⚠.
+
+### Disk usage
+
+```bash
+# Show file sizes inline
+claude-recall --size
+
+# Sort by size (largest first)
+claude-recall --size --sort size
+```
+
+### Resume a session
+
+Forgot where a session was and how to get back into it? `--resume` prints the exact command — including the `cd` into the right working directory, since Claude Code's resume is project-scoped:
+
+```bash
+claude-recall --resume d817ab64
+```
+
+```
+  Session:  d817ab64-b828-405f-86fe-3ba0397a0c50
+  Date:     2026-05-31 17:52
+  Project:  cruisesort  (main)
+  Dir:      /Users/you/github/cruisesort
+
+  Resume with:
+
+    cd /Users/you/github/cruisesort && claude --resume d817ab64-b828-405f-86fe-3ba0397a0c50
+```
+
+If you're already in the session's directory, the `cd` is omitted. The 8-char prefix shown in the listing is all you need.
+
+### Remove a specific session
+
+```bash
+claude-recall --remove cf21fedb              # by 8-char prefix
+claude-recall --remove cf21fedb --dry-run    # preview first
+```
+
+```
+  Session:  cf21fedb-e69d-40d0-a2c4-077ad9feb67f
+  Date:     2026-06-02 09:44
+  Project:  laibinis
+  Messages: 12
+  Summary:  find sessions
+  Disk:     860.3KB
+
+  Remove this session's transcript? [y/N]
+```
+
+Only deletes the transcript file — the history index entry is preserved so the session still appears in search results (marked `-`).
+
+### Bulk cleanup old transcripts
+
+Preview what would be deleted:
+
+```bash
+claude-recall --clean --older-than 60 --dry-run
+```
+
+Actually clean up (interactive confirmation):
+
+```bash
+claude-recall --clean --older-than 60
+```
+
+Cleanup **never** touches `history.jsonl` — your session index is preserved so keyword search still works. Only transcript files (the large JSONL conversation logs) are removed.
+
+### Statistics
+
+```bash
+claude-recall --stats
+```
+
+```
+Sessions in history:    83
+Transcripts on disk:    27
+Total prompts:          2238
+Disk usage:             61.0MB
+Date range:             2026-03-02 13:27 → 2026-06-02 09:44
+
+Token Usage (transcripts on disk):
+  Input:                2.1K
+  Output:               512.3K
+  Cache write:          8.2M
+  Cache read:           62.4M
+  Estimated total cost: $147.23
+
+By project:
+    44  laibinis
+    14  Few-Word
+     7  ete-tools
+    ...
+```
+
+### Export
+
+```bash
+claude-recall --export json > sessions.json
+claude-recall --export csv > sessions.csv
+claude-recall --export json --tokens   # includes token data
+```
+
+### Composable flags
+
+`--tokens`, `--size`, and `--context` are **display modifiers** — use any combination with any filter:
+
+```bash
+# Everything at once
+claude-recall --tokens --size --context -n 5
+
+# Search + enrichments
+claude-recall -s "auth" --project login --tokens --size --sort cost
+
+# Sort by cost, show disk usage too
+claude-recall --sort cost --tokens --size -n 10
+
+# Detailed per-session breakdown (instead of inline)
+claude-recall --detail --project ete -n 3
+```
+
+## All options
+
+| Flag | Description | Composable |
+|------|-------------|:---:|
+| **Filters** |
+| `-s`, `--search` | Search by keyword | |
+| `-f`, `--full-text` | Include transcript content in search | |
+| `--project` | Filter by project name | |
+| `--date` | Filter by date prefix | |
+| **Display modifiers** |
+| `--tokens` | Show token usage and cost inline | ✓ |
+| `--size` | Show transcript file sizes inline | ✓ |
+| `--context` | Show peak context window inline | ✓ |
+| `--detail` | Expanded per-session breakdown | |
+| `-v`, `--verbose` | Show more messages per session | ✓ |
+| **Listing** |
+| `-n`, `--limit` | Limit number of results | |
+| `--reverse` | Show oldest first | |
+| `--sort` | Sort by: `date`, `tokens`, `cost`, `size`, `messages` | |
+| **Actions** |
+| `--resume ID` | Print the command to resume a session (with `cd`) | |
+| `--remove ID` | Remove a specific session transcript | |
+| `--clean` | Bulk cleanup old transcripts | |
+| `--older-than` | Days threshold for --clean (default: 90) | |
+| `--dry-run` | Preview without deleting | |
+| `--stats` | Summary statistics | |
+| **Export** |
+| `--export` | Export as `json` or `csv` | |
+
+## `cc` — Session wrapper
+
+The `cc` command wraps `claude` with two quality-of-life prompts:
+
+1. **On start** — asks for a session name (colorized, skippable with Enter)
+2. **On exit** — asks whether to keep, discard, or bulk-clean old transcripts
+
+```
+$ cc
+Session name (enter to skip): TEL GPU capacity planning
+→ TEL GPU capacity planning
+
+[... normal Claude Code session ...]
+
+Keep this session transcript? [Y/n/clean]: y
+Session kept.
+```
+
+### Options at exit
+
+| Input | Action |
+|-------|--------|
+| `y` or Enter | Keep the transcript (default) |
+| `n` | Delete the transcript for the session that just ended |
+| `clean` | Run `claude-recall --clean` to bulk-remove old transcripts |
+
+### Configuration
+
+Set these in your `.zshrc` to change behavior:
+
+```bash
+export CC_SKIP_NAME=1          # Never prompt for session name
+export CC_SKIP_EXIT=1          # Never prompt on exit
+export CC_AUTO_CLEAN_DAYS=60   # Days threshold for 'clean' option (default: 90)
+```
+
+The wrapper is transparent — all arguments pass through to `claude`:
+
+```bash
+cc --model sonnet           # session name prompt, then launches with sonnet
+cc -n "already named"       # skips name prompt (already provided)
+cc -p "one-shot question"   # skips both prompts (print mode)
+```
+
+---
+
+## How Claude Code stores sessions
+
+```
+~/.claude/
+├── history.jsonl              # Index of all prompts (lightweight, never deleted)
+├── .claude-recall-cache.json  # claude-recall's own metadata cache (auto-managed)
+├── sessions/                  # Active session PIDs
+│   └── 45394.json
+└── projects/                  # Transcripts organized by working directory
+    ├── -Users-you/            # Sessions started from ~/
+    │   ├── abc123.jsonl       # Full conversation transcript
+    │   └── abc123/            # Subagent transcripts, tool results
+    ├── -Users-you-myrepo/     # Sessions started from ~/myrepo
+    └── ...
+```
+
+- **Transcript JSONL** — full conversation including assistant responses, tool calls, usage data, the working directory, and git branch. **This is what `claude-recall` indexes.** These are the large files.
+- **history.jsonl** — one line per prompt you sent. `claude-recall` reads it only to keep showing sessions whose transcript has been deleted (marked `-`).
+- Session IDs are UUIDs. The project directory name is the working directory path with `/` replaced by `-`.
+
+### The cache
+
+`claude-recall` builds its index by scanning every transcript, then caches the parsed metadata in `~/.claude/.claude-recall-cache.json`. On later runs it re-parses only the transcripts whose `mtime`/`size` changed — so a repeat run is near-instant even with hundreds of sessions. The cache is fully disposable: delete it any time and it rebuilds on the next run.
+
+## Configuration
+
+Set `CLAUDE_DIR` environment variable if your Claude config lives somewhere non-standard:
+
+```bash
+export CLAUDE_DIR=/custom/path/.claude
+```
+
+Cost estimates use default Opus pricing. Edit the `PRICING` dict in the script to adjust rates.
+
+## Tips
+
+- **Use `cc` instead of `claude`** to get automatic name prompts, or name manually with `claude -n "my session"` — named sessions are easier to find with both `/resume` and `claude-recall`.
+- **Jump back into any session** with `claude-recall --resume <prefix>` — it hands you the `cd` + `claude --resume` command, so you don't have to remember which directory the session belonged to.
+- **Transcripts get pruned** over time. If a session shows `-` (history only), the full transcript was cleaned up. The message index in history.jsonl persists.
+- **Full-text search** (`-f`) is slower because it reads every transcript file on disk. Use keyword search first, add `-f` if you need to search assistant responses.
+
+## License
+
+MIT
