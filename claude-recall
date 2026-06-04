@@ -29,7 +29,7 @@ PROJECTS_DIR = CLAUDE_DIR / "projects"
 # Metadata cache: transcripts are parsed once and reused until their mtime/size
 # changes. Bump CACHE_VERSION when the cached `meta` shape changes.
 CACHE_FILE = CLAUDE_DIR / ".claude-recall-cache.json"
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 # Sidecar store for user-assigned session names (never touches transcripts).
 NAMES_FILE = CLAUDE_DIR / ".claude-recall-names.json"
@@ -105,6 +105,7 @@ def clean_display(text):
     """
     if not text:
         return ""
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)  # strip ANSI color/style codes
     m = re.search(r"<command-name>([^<]*)</command-name>", text)
     if m:
         return m.group(1).strip()
@@ -751,11 +752,19 @@ def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0, skip_summary=
                 if t == "user" and not d.get("isMeta"):
                     text = extract_user_text(msg)
                     if text:
-                        turns.append(("▸ you", text, []))
+                        turns.append(["▸ you", text, []])
                 elif t == "assistant":
                     text, tools = assistant_summary(msg)
-                    if text or tools:
-                        turns.append(("● claude", text, tools))
+                    if not (text or tools):
+                        continue
+                    # Coalesce consecutive assistant messages (text + its tool
+                    # calls) into one turn so tool-only lines don't count as turns.
+                    if turns and turns[-1][0] == "● claude":
+                        prev = turns[-1]
+                        prev[1] = (prev[1] + " " + text).strip() if text else prev[1]
+                        prev[2] = prev[2] + tools
+                    else:
+                        turns.append(["● claude", text, tools])
     except (IOError, OSError) as e:
         print(f"  Error reading transcript: {e}", file=sys.stderr)
         sys.exit(1)
@@ -799,7 +808,18 @@ def _show_turn(label, text, tools, terms):
     for ln in textwrap.wrap(text, width=92):
         print(f"      {ln}")
     if tools and not terms:
-        print(f"      {'  '.join('⚙ ' + tn for tn in tools)}")
+        print(f"      {format_tools(tools)}")
+
+
+def format_tools(tools):
+    """Render tool markers, collapsing consecutive repeats: 'Bash ×3'."""
+    runs = []
+    for tn in tools:
+        if runs and runs[-1][0] == tn:
+            runs[-1][1] += 1
+        else:
+            runs.append([tn, 1])
+    return "  ".join(f"⚙ {tn}" + (f" ×{c}" if c > 1 else "") for tn, c in runs)
 
 
 def assistant_summary(message):
