@@ -718,8 +718,13 @@ def cmd_resume(sid_prefix, sessions, transcripts, run=False):
     print(f"  (add --exec to run it directly)\n")
 
 
-def cmd_show(sid_prefix, sessions, transcripts, grep=None):
-    """Pretty-print a session's conversation, collapsing tool noise."""
+def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0, skip_summary=False):
+    """Pretty-print a session's conversation, collapsing tool noise.
+
+    grep:         only show turns matching these terms (highlighted).
+    last:         show only the final N turns (after any grep filter).
+    skip_summary: drop auto-generated compaction-summary turns.
+    """
     sid = _resolve_or_exit(sid_prefix, sessions, transcripts)
     if sid not in transcripts:
         print("No transcript on disk for this session (history-only).", file=sys.stderr)
@@ -727,25 +732,17 @@ def cmd_show(sid_prefix, sessions, transcripts, grep=None):
 
     session = sessions.get(sid, {})
     terms = parse_terms(grep) if grep else []
-    cost = estimate_cost(session, session.get("model"))
-    proj = project_short_name(session.get("project", ""))
-    start = format_timestamp(session.get("first_ts", 0))
-    name = session.get("name")
 
-    print(f"\n{'═' * 70}")
-    print(f"  {sid[:8]}  |  {start}  |  {proj}  |  {session.get('model') or '?'}  |  ${cost:.2f}")
-    if name:
-        print(f"  ★ {name}")
-    if grep:
-        print(f"  (showing turns matching: {' '.join(terms)})")
-    print(f"{'═' * 70}")
-
+    # Collect turns first so --last can slice the tail.
+    turns = []  # (label, text, tools)
     try:
         with open(transcripts[sid]) as f:
             for line in f:
                 try:
                     d = json.loads(line)
                 except json.JSONDecodeError:
+                    continue
+                if skip_summary and d.get("isCompactSummary"):
                     continue
                 msg = d.get("message")
                 if not isinstance(msg, dict):
@@ -754,29 +751,55 @@ def cmd_show(sid_prefix, sessions, transcripts, grep=None):
                 if t == "user" and not d.get("isMeta"):
                     text = extract_user_text(msg)
                     if text:
-                        _print_turn("▸ you", text, terms)
+                        turns.append(("▸ you", text, []))
                 elif t == "assistant":
                     text, tools = assistant_summary(msg)
-                    if text:
-                        _print_turn("● claude", text, terms)
-                    if tools and not terms:
-                        print(f"      {'  '.join('⚙ ' + tn for tn in tools)}")
+                    if text or tools:
+                        turns.append(("● claude", text, tools))
     except (IOError, OSError) as e:
         print(f"  Error reading transcript: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if terms:
+        turns = [tr for tr in turns if tr[1] and any(t in tr[1].lower() for t in terms)]
+
+    total = len(turns)
+    truncated = bool(last) and total > last
+    if truncated:
+        turns = turns[-last:]
+
+    cost = estimate_cost(session, session.get("model"))
+    proj = project_short_name(session.get("project", ""))
+    start = format_timestamp(session.get("first_ts", 0))
+
+    print(f"\n{'═' * 70}")
+    print(f"  {sid[:8]}  |  {start}  |  {proj}  |  {session.get('model') or '?'}  |  ${cost:.2f}")
+    if session.get("name"):
+        print(f"  ★ {session['name']}")
+    note = []
+    if grep:
+        note.append(f"matching: {' '.join(terms)}")
+    if truncated:
+        note.append(f"last {last} of {total} turns")
+    if note:
+        print(f"  ({'  |  '.join(note)})")
+    print(f"{'═' * 70}")
+
+    for label, text, tools in turns:
+        _show_turn(label, text, tools, terms)
     print()
 
 
-def _print_turn(label, text, terms):
-    """Render one conversation turn; with terms, only show matching turns."""
+def _show_turn(label, text, tools, terms):
+    """Render one collected turn (text + collapsed tool markers)."""
     text = re.sub(r"\s+", " ", text).strip()
-    if terms:
-        if not any(t in text.lower() for t in terms):
-            return
+    if terms and text:
         text = highlight(text, terms)
     print(f"\n  {label}")
-    for ln in textwrap.wrap(text, width=92) or [""]:
+    for ln in textwrap.wrap(text, width=92):
         print(f"      {ln}")
+    if tools and not terms:
+        print(f"      {'  '.join('⚙ ' + tn for tn in tools)}")
 
 
 def assistant_summary(message):
@@ -1158,6 +1181,8 @@ def main():
     parser.add_argument("--stats", action="store_true", help="Summary statistics")
     parser.add_argument("--show", metavar="ID", help="Print a session's conversation by ID prefix")
     parser.add_argument("--grep", metavar="TERMS", help="With --show, only show turns matching these terms")
+    parser.add_argument("--last", type=int, default=0, metavar="N", help="With --show, only the final N turns")
+    parser.add_argument("--no-summary", action="store_true", help="With --show, skip compaction-summary turns")
     parser.add_argument(
         "--resume", metavar="ID",
         help="Print the command to resume a session (cd + claude --resume) by ID prefix",
@@ -1200,7 +1225,8 @@ def main():
         return
 
     if args.show:
-        cmd_show(args.show, sessions, transcripts, grep=args.grep)
+        cmd_show(args.show, sessions, transcripts, grep=args.grep,
+                 last=args.last, skip_summary=args.no_summary)
         return
 
     if args.resume:

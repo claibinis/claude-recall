@@ -70,7 +70,11 @@ Found the right session but want to *read* it without resuming? `--show` pretty-
 ```bash
 claude-recall --show cf21fedb
 claude-recall --show cf21fedb --grep "timeout"   # only turns mentioning "timeout", highlighted
+claude-recall --show cf21fedb --last 10          # just the final 10 turns
+claude-recall --show cf21fedb --no-summary       # skip auto-generated compaction recaps
 ```
+
+For a long session, `--last N` ("what was I doing at the end of this?") and `--grep` are the way in — a full dump of an 800-prompt session is tens of thousands of lines. `--no-summary` hides the "session continued from a previous conversation" recap turns that compaction inserts.
 
 ### Filter by project, branch, or time
 
@@ -294,6 +298,8 @@ claude-recall --detail --project ete -n 3
 | **Actions** |
 | `--show ID` | Print a session's conversation | |
 | `--grep TERMS` | With `--show`, only matching turns (highlighted) | |
+| `--last N` | With `--show`, only the final N turns | |
+| `--no-summary` | With `--show`, skip compaction-summary turns | |
 | `--resume ID` | Print the command to resume a session (with `cd`) | |
 | `--exec` | With `--resume`, run the command instead of printing | |
 | `--set-name ID NAME` | Assign a name to a session | |
