@@ -579,7 +579,7 @@ def resume_command(session):
 
 
 def print_session(session, transcripts, show_tokens=False, show_size=False,
-                  show_context=False, verbose=False, snippet=""):
+                  show_context=False, verbose=False, snippet="", show_last=False):
     """Print a single session entry."""
     sid = session["id"]
     start = format_timestamp(session["first_ts"])
@@ -601,6 +601,10 @@ def print_session(session, transcripts, show_tokens=False, show_size=False,
     label = f"★ {name} — {first_msg}" if name else first_msg
 
     extras = ""
+
+    if show_last:
+        # When sorting by recent, show last activity so the ordering is obvious.
+        extras += f"  [↻ {format_timestamp(session.get('last_ts', 0))}]"
 
     if show_size:
         if sid in transcripts:
@@ -1475,6 +1479,7 @@ def main():
             show_context=args.context,
             verbose=args.verbose,
             snippet=snippets.get(s["id"], ""),
+            show_last=(args.sort == "recent"),
         )
 
     print(
