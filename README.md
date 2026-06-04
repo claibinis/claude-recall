@@ -47,26 +47,42 @@ Claude Code Sessions (83 of 83)  [+ = transcript on disk, - = history only]
 
 The `+`/`-` indicator shows whether the full transcript file is still on disk or only the message index remains.
 
-### Search by keyword
+### Search by keyword(s)
 
 ```bash
 claude-recall -s "deployment"
-claude-recall -s "GPU provisioning"
+claude-recall -s "deploy retry timeout"     # all three words must appear (AND)
+claude-recall -s "auth login signup" --any  # any of the words (OR)
 ```
 
-Searches message content and project names. Add `-f` for full-text search through transcript files (slower but catches assistant responses too):
+A multi-word query is **AND by default** — every term must appear (in the prompts, the session name, or the project). Use `--any` for OR. Searches show a `↳` snippet of the match under each result.
+
+Add `-f` for full-text search through transcript files (slower, but catches assistant responses and tool output too — and the snippet comes from the matching line):
 
 ```bash
-claude-recall -s "foo" -f
+claude-recall -s "playwright tools" -f
 ```
 
-### Filter by project or date
+### Read a session
+
+Found the right session but want to *read* it without resuming? `--show` pretty-prints the conversation, collapsing tool noise:
 
 ```bash
-claude-recall --project ete-tools
-claude-recall --date 2026-04
-claude-recall --date 2026-04-02
+claude-recall --show cf21fedb
+claude-recall --show cf21fedb --grep "timeout"   # only turns mentioning "timeout", highlighted
 ```
+
+### Filter by project, branch, or time
+
+```bash
+claude-recall --project ete-tools     # matches the directory name (not the whole path)
+claude-recall --branch fix-auth       # git branch substring
+claude-recall --since 7d              # active in the last 7 days (also 24h, 2w, or 2026-04-01)
+claude-recall --until 2026-05-01      # active before a date
+claude-recall --date 2026-04          # started in a given month/day
+```
+
+Non-default branches show inline as `project@branch` in the listing.
 
 ### Token usage and cost
 
@@ -133,7 +149,22 @@ claude-recall --resume d817ab64
     cd /Users/you/github/cruisesort && claude --resume d817ab64-b828-405f-86fe-3ba0397a0c50
 ```
 
-If you're already in the session's directory, the `cd` is omitted. The 8-char prefix shown in the listing is all you need.
+If you're already in the session's directory, the `cd` is omitted. The 8-char prefix shown in the listing is all you need. Add `--exec` to skip the copy-paste and jump straight back in:
+
+```bash
+claude-recall --resume d817ab64 --exec
+```
+
+### Name a session
+
+Most sessions are unnamed, which is the whole reason they're hard to find. Give one a name after the fact — it's stored separately and never touches the transcript:
+
+```bash
+claude-recall --set-name d817ab64 "gpu capacity planning"
+claude-recall --unname d817ab64
+```
+
+Named sessions show a `★` in the listing and are matched by search. The name survives even if you later delete the transcript.
 
 ### Remove a specific session
 
@@ -171,6 +202,13 @@ claude-recall --clean --older-than 60
 
 Cleanup **never** touches `history.jsonl` — your session index is preserved so keyword search still works. Only transcript files (the large JSONL conversation logs) are removed.
 
+To clear out throwaway sessions (a stray `/exit`, a one-line question) rather than old ones:
+
+```bash
+claude-recall --prune-empty --dry-run
+claude-recall --prune-empty
+```
+
 ### Statistics
 
 ```bash
@@ -191,12 +229,19 @@ Token Usage (transcripts on disk):
   Cache read:           62.4M
   Estimated total cost: $147.23
 
+Cache efficiency:
+  Reuse ratio:          88%   (reads / all input tokens)
+  Low-reuse sessions (paid to write cache, reused little):
+    [a1b2c3d4] big-refactor       write   2.1M  read 412.0K  reuse  16%
+
 By project:
     44  laibinis
     14  Few-Word
      7  ete-tools
     ...
 ```
+
+The **cache efficiency** block shows how much of your input was served from cache (cheap) versus freshly written (expensive), and flags sessions that paid to write a lot of cache they barely reused.
 
 ### Export
 
@@ -229,14 +274,17 @@ claude-recall --detail --project ete -n 3
 | Flag | Description | Composable |
 |------|-------------|:---:|
 | **Filters** |
-| `-s`, `--search` | Search by keyword | |
-| `-f`, `--full-text` | Include transcript content in search | |
-| `--project` | Filter by project name | |
+| `-s`, `--search` | Search by keyword(s); space-separated = AND | |
+| `--any` | Match ANY search term instead of ALL (OR) | |
+| `-f`, `--full-text` | Include transcript content in search (shows snippets) | |
+| `--project` | Filter by project (directory) name | |
+| `--branch` | Filter by git branch (substring) | |
+| `--since` / `--until` | Filter by last activity: `7d`/`24h`/`2w` or `YYYY-MM-DD` | |
 | `--date` | Filter by date prefix | |
 | **Display modifiers** |
 | `--tokens` | Show token usage and cost inline | ✓ |
 | `--size` | Show transcript file sizes inline | ✓ |
-| `--context` | Show peak context window inline | ✓ |
+| `--context` | Show peak context window inline (model-aware ⚠) | ✓ |
 | `--detail` | Expanded per-session breakdown | |
 | `-v`, `--verbose` | Show more messages per session | ✓ |
 | **Listing** |
@@ -244,12 +292,18 @@ claude-recall --detail --project ete -n 3
 | `--reverse` | Show oldest first | |
 | `--sort` | Sort by: `date`, `tokens`, `cost`, `size`, `messages` | |
 | **Actions** |
+| `--show ID` | Print a session's conversation | |
+| `--grep TERMS` | With `--show`, only matching turns (highlighted) | |
 | `--resume ID` | Print the command to resume a session (with `cd`) | |
+| `--exec` | With `--resume`, run the command instead of printing | |
+| `--set-name ID NAME` | Assign a name to a session | |
+| `--unname ID` | Remove a session's name | |
 | `--remove ID` | Remove a specific session transcript | |
 | `--clean` | Bulk cleanup old transcripts | |
+| `--prune-empty` | Remove throwaway sessions (≤1 prompt) | |
 | `--older-than` | Days threshold for --clean (default: 90) | |
 | `--dry-run` | Preview without deleting | |
-| `--stats` | Summary statistics | |
+| `--stats` | Summary statistics (incl. cache efficiency) | |
 | **Export** |
 | `--export` | Export as `json` or `csv` | |
 
@@ -305,6 +359,7 @@ cc -p "one-shot question"   # skips both prompts (print mode)
 ~/.claude/
 ├── history.jsonl              # Index of all prompts (lightweight, never deleted)
 ├── .claude-recall-cache.json  # claude-recall's own metadata cache (auto-managed)
+├── .claude-recall-names.json  # your --set-name labels (auto-managed)
 ├── sessions/                  # Active session PIDs
 │   └── 45394.json
 └── projects/                  # Transcripts organized by working directory
@@ -332,6 +387,8 @@ export CLAUDE_DIR=/custom/path/.claude
 ```
 
 Cost estimates use default Opus pricing. Edit the `PRICING` dict in the script to adjust rates.
+
+The context-window warning (⚠) fires at 90% of the model's window by default. Override the threshold with `CLAUDE_RECALL_CTX_WARN` (e.g. `export CLAUDE_RECALL_CTX_WARN=0.8`).
 
 ## Tips
 
