@@ -22,6 +22,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
 
+__version__ = "1.0.0"
+
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
@@ -1238,6 +1240,8 @@ def main():
         "  claude-recall --clean --older-than 60    Bulk cleanup\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     # Search & filter
     parser.add_argument("-s", "--search", help="Search by keyword(s); space-separated terms are AND by default")
