@@ -4,3 +4,7 @@
 # Python
 __pycache__/
 *.pyc
+
+# Browser/screenshot artifacts (Playwright MCP, local captures)
+.playwright-mcp/
+*.png
