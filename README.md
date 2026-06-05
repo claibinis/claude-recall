@@ -26,7 +26,11 @@ cp claude-recall cc ~/bin/
 ./claude-recall
 ```
 
-**Requirements:** Python 3.6+ (no external dependencies). The `cc` wrapper requires zsh.
+**Requirements:** Python 3.6+ (no external dependencies). The session wrapper ships in three flavors — pick the one for your shell: `cc` (zsh), `cc.bash` (bash), or `cc.ps1` (Windows PowerShell).
+
+### Windows
+
+`claude-recall` is plain Python, so it runs on Windows too — invoke it as `python claude-recall ...`, or put this folder on your `PATH` and use the included `claude-recall.cmd` launcher to just type `claude-recall ...`. For the session wrapper, use `cc.ps1` (e.g. add `function cc { & "C:\path\to\cc.ps1" @args }` to your PowerShell `$PROFILE`).
 
 ## Usage
 
@@ -326,6 +330,16 @@ The `cc` command wraps `claude` with two quality-of-life prompts:
 
 1. **On start** — asks for a session name (colorized, skippable with Enter)
 2. **On exit** — asks whether to keep, discard, or bulk-clean old transcripts
+
+Three equivalent versions are included — symlink/alias whichever matches your shell to `cc`:
+
+| Shell | File |
+|-------|------|
+| zsh | `cc` |
+| bash | `cc.bash` |
+| Windows PowerShell | `cc.ps1` |
+
+All three honor the same `CC_SKIP_NAME` / `CC_SKIP_EXIT` / `CC_AUTO_CLEAN_DAYS` settings.
 
 ```
 $ cc

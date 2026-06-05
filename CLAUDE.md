@@ -47,6 +47,7 @@ No build step, no package install, no test suite. These are standalone scripts.
 - On exit prompts to keep/discard/clean. Discard finds the just-ended transcript via `find ... -newer /tmp/.cc_session_start` (a marker file `touch`ed at launch)
 - Passthrough: skips the name prompt when `-n`/`--name` is present, skips both prompts for `-p`/`--print`
 - Configurable via `CC_SKIP_NAME`, `CC_SKIP_EXIT`, `CC_AUTO_CLEAN_DAYS` env vars
+- Ported to `cc.bash` (bash; uses a `/tmp/.cc_session_start` marker like `cc`) and `cc.ps1` (Windows PowerShell; uses a captured `$start` time + `LastWriteTime` instead of a marker file). Keep the three behaviorally in sync when changing wrapper logic. `claude-recall.cmd` is a Windows launcher that runs the Python script via `py`/`python`.
 
 ## Key Data Paths
 
