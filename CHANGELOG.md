@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Custom model pricing** — `scripts/gen-pricing` generates a pricing file from any
+  LiteLLM gateway's standard `/model/info` endpoint (credentials supplied via
+  `LITELLM_BASE_URL`/`LITELLM_API_KEY`). Point claude-recall at it with
+  `CLAUDE_RECALL_PRICING_FILE` to override the built-in default rates; unset, defaults
+  are unchanged. Model lookup is now longest-match, so `claude-opus-4-8` beats a generic
+  `claude-opus-4` entry.
+
 ## 1.0.0
 
 First tagged release. `claude-recall` indexes the `~/.claude/projects/` transcript

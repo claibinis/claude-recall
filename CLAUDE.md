@@ -32,8 +32,9 @@ No build step, no package install, no test suite. These are standalone scripts.
 - **Caching** — parsed metadata is cached in `~/.claude/.claude-recall-cache.json`, keyed by transcript path with its `mtime`+`size`. On each run, unchanged files reuse cached metadata; only new/altered files are re-parsed. The cache is rewritten only when something changed (atomically, via a `.tmp` rename). Bump `CACHE_VERSION` whenever the cached `meta` shape changes, to force a rebuild. Because usage lives in the cached session dict, no consumer re-reads transcripts — `--tokens`/`--context`/`--sort cost`/export all read in-memory fields.
 - **`history.jsonl` is supplementary only** — `merge_history_only()` adds sessions whose transcript was deleted (so they still show, marked `-`). The live index does not depend on it.
 - Timestamps: transcripts use ISO-8601 strings, `history.jsonl` uses epoch ms — `to_ms()` normalizes both to epoch ms. `clean_display()` turns `<command-name>/foo</command-name>` wrappers, tag noise, and ANSI escape codes into readable prompts.
-- Cost estimation: `estimate_cost()` applies per-model pricing from the `PRICING` dict by substring-matching the model name (falls back to `default`/Opus rates). `cache_reuse_ratio()` derives the cache-hit fraction (reads / all input tokens) shown in `--stats` and `--detail`.
-- Context warning: `context_warns()` flags a session's peak context against the model's window from `CONTEXT_LIMITS` (Opus/Haiku 200K, Sonnet 1M) at `CONTEXT_WARN_RATIO` (default 0.9, override via `CLAUDE_RECALL_CTX_WARN`) — not a hardcoded number.
+- Cost estimation: `estimate_cost()` applies per-model pricing from the `PRICING` dict via `_best_match()` (longest matching key wins, so `claude-opus-4-8` beats a generic `claude-opus-4`; falls back to `default`/Opus rates). `cache_reuse_ratio()` derives the cache-hit fraction (reads / all input tokens) shown in `--stats` and `--detail`.
+- Pricing overrides: `_load_pricing_overrides()` (called once at import) merges per-model rates from `CLAUDE_RECALL_PRICING_FILE` (JSON keyed by model name, USD per 1M tokens) over `PRICING`/`CONTEXT_LIMITS`; unset → built-in defaults unchanged. Generate the file for any LiteLLM gateway with `scripts/gen-pricing` (reads `LITELLM_BASE_URL`/`LITELLM_API_KEY`, hits the standard `/model/info` endpoint).
+- Context warning: `context_warns()` flags a session's peak context against the model's window from `CONTEXT_LIMITS` (Opus/Haiku 200K, Sonnet 1M; overridable per model via the pricing file's `max_input`) at `CONTEXT_WARN_RATIO` (default 0.9, override via `CLAUDE_RECALL_CTX_WARN`) — not a hardcoded number.
 - Search: `parse_terms()` splits the query into whitespace-separated terms; `terms_match()` is AND by default / OR with `--any`. Names and project are searchable alongside prompts. `search_transcripts()` (full-text, `-f`) returns `{id: snippet}`; `make_snippet()`/`first_snippet()` build the `↳`-prefixed match previews shown under listing rows.
 - Help: two-tier — `add_help=False`, with a hand-written concise `-h`/`--help` (`print_short_help()`/`SHORT_HELP`) and `--help-all` that prints argparse's full `parser.print_help()`.
 - Display: plain column-formatted terminal output, **no ANSI colors** (only `cc` colorizes; `--show`'s `--grep` marks hits with `« »`). `--tokens`/`--size`/`--context` are composable inline enrichments; `--detail` switches to an expanded per-session view; the listing row shows `proj@branch` for non-default branches and a `★ name` label when assigned.
@@ -60,4 +61,13 @@ The tool reads from the Claude Code data directory (configurable via `CLAUDE_DIR
 
 ## Pricing
 
-Model pricing lives in the `PRICING` dict near the top of `claude-recall`. Adjust rates there when pricing changes.
+Model pricing lives in the `PRICING` dict near the top of `claude-recall`. Adjust rates there when pricing changes, **or** generate a pricing file from a LiteLLM gateway and point `CLAUDE_RECALL_PRICING_FILE` at it:
+
+```bash
+export LITELLM_BASE_URL=https://your-litellm-gateway.example.com
+export LITELLM_API_KEY=sk-...        # LITELLM_INSECURE=1 for a private-CA gateway
+./scripts/gen-pricing > ~/.claude/pricing.json
+export CLAUDE_RECALL_PRICING_FILE=~/.claude/pricing.json
+```
+
+`scripts/gen-pricing` converts the gateway's per-token rates to per-1M (matching the `PRICING` dict) and includes cache costs + context limits. The file overrides defaults when set; it's plain JSON and can be hand-edited.

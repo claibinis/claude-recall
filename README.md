@@ -43,9 +43,9 @@ claude-recall
 ```
 Claude Code Sessions (83 of 83)  [+ = transcript on disk, - = history only]
 
-  2026-06-02 09:44  [cf21fedb] +  (  4 msgs)  laibinis          find sessions
-  2026-06-01 12:48  [9e29a7a6] +  ( 24 msgs)  laibinis          how long could one live on...
-  2026-05-28 07:23  [654f5fb5] +  ( 50 msgs)  laibinis          why does the build fail when...
+  2026-06-02 09:44  [cf21fedb] +  (  4 msgs)  alice             find sessions
+  2026-06-01 12:48  [9e29a7a6] +  ( 24 msgs)  alice             add pagination to the API...
+  2026-05-28 07:23  [654f5fb5] +  ( 50 msgs)  alice             why does the build fail when...
   ...
 ```
 
@@ -84,7 +84,7 @@ For a long session, `--last N` ("what was I doing at the end of this?") and `--g
 ### Filter by project, branch, or time
 
 ```bash
-claude-recall --project ete-tools     # matches the directory name (not the whole path)
+claude-recall --project my-project    # matches the directory name (not the whole path)
 claude-recall --branch fix-auth       # git branch substring
 claude-recall --since 7d              # active in the last 7 days (also 24h, 2w, or 2026-04-01)
 claude-recall --until 2026-05-01      # active before a date
@@ -185,7 +185,7 @@ claude-recall --remove cf21fedb --dry-run    # preview first
 ```
   Session:  cf21fedb-e69d-40d0-a2c4-077ad9feb67f
   Date:     2026-06-02 09:44
-  Project:  laibinis
+  Project:  my-project
   Messages: 12
   Summary:  find sessions
   Disk:     860.3KB
@@ -246,12 +246,12 @@ Token Usage (transcripts on disk):
 Cache efficiency:
   Reuse ratio:          88%   (reads / all input tokens)
   Low-reuse sessions (paid to write cache, reused little):
-    [a1b2c3d4] big-refactor       write   2.1M  read 412.0K  reuse  16%
+    [a1b2c3d4] api-server         write   2.1M  read 412.0K  reuse  16%
 
 By project:
-    44  laibinis
-    14  Few-Word
-     7  ete-tools
+    44  my-project
+    14  api-server
+     7  web-app
     ...
 ```
 
@@ -415,9 +415,34 @@ Set `CLAUDE_DIR` environment variable if your Claude config lives somewhere non-
 export CLAUDE_DIR=/custom/path/.claude
 ```
 
-Cost estimates use default Opus pricing. Edit the `PRICING` dict in the script to adjust rates.
+Cost estimates use default Opus pricing. Edit the `PRICING` dict in the script to adjust rates — or, to pull real rates automatically, point claude-recall at a generated pricing file (see below).
 
 The context-window warning (⚠) fires at 90% of the model's window by default. Override the threshold with `CLAUDE_RECALL_CTX_WARN` (e.g. `export CLAUDE_RECALL_CTX_WARN=0.8`).
+
+### Custom model pricing (LiteLLM gateways)
+
+If your models run behind a [LiteLLM](https://docs.litellm.ai/) proxy, you can generate an exact pricing file from the gateway instead of hand-editing the `PRICING` dict. `scripts/gen-pricing` queries the gateway's standard `/model/info` endpoint and writes JSON keyed by model name (rates in USD per 1M tokens), including input, output, cache-write, cache-read, and context limits.
+
+You supply the gateway URL and a credential — nothing is hardcoded, so this works against any LiteLLM-backed gateway:
+
+```bash
+export LITELLM_BASE_URL=https://your-litellm-gateway.example.com
+export LITELLM_API_KEY=sk-...            # a key valid for that gateway (or your login token)
+# export LITELLM_INSECURE=1              # only for internal gateways with a private CA
+
+./scripts/gen-pricing > ~/.claude/pricing.json
+
+# tell claude-recall to use it (add to your shell profile to persist):
+export CLAUDE_RECALL_PRICING_FILE=~/.claude/pricing.json
+```
+
+With `CLAUDE_RECALL_PRICING_FILE` set, the generated rates override the built-in defaults; unset, the defaults are used unchanged. Model lookup is longest-match, so a specific entry like `claude-opus-4-8` wins over a generic `claude-opus-4`. The file is plain JSON — you can also write or edit it by hand. Rates are USD per 1M tokens; the values below are example rates — replace them with your own:
+
+```json
+{
+  "your-model-name": {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30, "max_input": 200000, "max_output": 64000}
+}
+```
 
 ## Tips
 

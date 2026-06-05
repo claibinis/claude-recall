@@ -56,13 +56,61 @@ CONTEXT_LIMITS = {
 CONTEXT_WARN_RATIO = float(os.environ.get("CLAUDE_RECALL_CTX_WARN", "0.9"))
 
 
-def context_limit(model):
-    """Return the context window size for a model name (substring match)."""
+def _load_pricing_overrides():
+    """Merge per-model rates from CLAUDE_RECALL_PRICING_FILE over the defaults.
+
+    The file is JSON keyed by model name, with rates in USD per 1M tokens
+    (example rates below — replace with your own), e.g.
+
+        {"your-model-name": {"input": 3.00, "output": 15.00,
+                             "cache_write": 3.75, "cache_read": 0.30,
+                             "max_input": 200000}}
+
+    Generate it for any LiteLLM gateway with scripts/gen-pricing. When the env
+    var is unset, the built-in defaults above are used unchanged.
+    """
+    path = os.environ.get("CLAUDE_RECALL_PRICING_FILE")
+    if not path:
+        return
+    try:
+        data = json.loads(Path(path).expanduser().read_text())
+    except (OSError, ValueError) as e:
+        print("warning: could not load CLAUDE_RECALL_PRICING_FILE "
+              "({}): {}".format(path, e), file=sys.stderr)
+        return
+    for model, fields in data.items():
+        if not isinstance(fields, dict):
+            continue
+        rate = {k: fields[k] for k in ("input", "output", "cache_write", "cache_read")
+                if isinstance(fields.get(k), (int, float))}
+        if rate:
+            PRICING[model] = rate
+        if isinstance(fields.get("max_input"), (int, float)):
+            CONTEXT_LIMITS[model] = int(fields["max_input"])
+
+
+_load_pricing_overrides()
+
+
+def _best_match(model, table):
+    """Return the table value whose key is the longest substring of `model`.
+
+    Longest-key wins so a specific entry (``claude-opus-4-8``) beats a generic
+    one (``claude-opus-4``). Falls back to the ``default`` entry.
+    """
     if model:
-        for key, limit in CONTEXT_LIMITS.items():
-            if key in model:
-                return limit
-    return CONTEXT_LIMITS["default"]
+        best = None
+        for key in table:
+            if key != "default" and key in model and (best is None or len(key) > len(best)):
+                best = key
+        if best is not None:
+            return table[best]
+    return table["default"]
+
+
+def context_limit(model):
+    """Return the context window size for a model name (longest-match)."""
+    return _best_match(model, CONTEXT_LIMITS)
 
 
 def context_warns(peak, model):
@@ -466,18 +514,13 @@ def parse_when(spec):
 
 def estimate_cost(usage, model=None):
     """Estimate USD cost from token usage."""
-    rates = PRICING.get("default")
-    if model:
-        for key, val in PRICING.items():
-            if key in model:
-                rates = val
-                break
+    rates = _best_match(model, PRICING)
 
     cost = 0.0
-    cost += (usage["input_tokens"] / 1_000_000) * rates["input"]
-    cost += (usage["output_tokens"] / 1_000_000) * rates["output"]
-    cost += (usage["cache_creation_input_tokens"] / 1_000_000) * rates["cache_write"]
-    cost += (usage["cache_read_input_tokens"] / 1_000_000) * rates["cache_read"]
+    cost += (usage["input_tokens"] / 1_000_000) * rates.get("input", 0)
+    cost += (usage["output_tokens"] / 1_000_000) * rates.get("output", 0)
+    cost += (usage["cache_creation_input_tokens"] / 1_000_000) * rates.get("cache_write", 0)
+    cost += (usage["cache_read_input_tokens"] / 1_000_000) * rates.get("cache_read", 0)
     return cost
 
 
