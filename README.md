@@ -285,6 +285,8 @@ claude-recall --detail --project ete -n 3
 
 ## All options
 
+`claude-recall -h` prints a concise, grouped summary; `claude-recall --help-all` prints the full option list below.
+
 | Flag | Description | Composable |
 |------|-------------|:---:|
 | **Filters** |

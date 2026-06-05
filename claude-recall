@@ -1220,6 +1220,34 @@ def filters_scope(args):
     return ", ".join(parts)
 
 
+SHORT_HELP = """\
+claude-recall {ver} — search, analyze, and manage Claude Code sessions
+
+Usage: claude-recall [options]
+
+Common
+  (no args)             List recent sessions
+  -s, --search TERMS    Search; space-separated terms are AND ( --any = OR )
+  -f, --full-text       Also search inside transcripts (slower; shows snippets)
+  --show ID             Read a session's conversation
+  --resume ID           Print resume command  ( --exec runs it )
+  --stats               Token/cost summary (honors filters)
+
+Filter   --project NAME   --branch NAME   --since/--until 7d|24h|2w|DATE   --date
+Enrich   --tokens   --context   --size   --detail   -n N
+Sort     --sort date|recent|cost|size|tokens|messages
+Manage   --set-name ID NAME   --remove ID   --clean   --prune-empty   --dry-run
+Other    --export json|csv    --version
+
+  claude-recall --help-all   full option list and details
+  https://github.com/claibinis/claude-recall
+"""
+
+
+def print_short_help():
+    print(SHORT_HELP.format(ver=__version__))
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 
@@ -1227,6 +1255,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="claude-recall",
         description="Search, analyze, and manage Claude Code sessions",
+        add_help=False,  # custom -h (concise) + --help-all (full) below
         epilog="Examples:\n"
         "  claude-recall                             List all sessions\n"
         "  claude-recall -s 'deploy' --tokens       Search with cost info\n"
@@ -1241,6 +1270,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
+    parser.add_argument("-h", "--help", action="store_true", help="Show concise help")
+    parser.add_argument("--help-all", action="store_true", help="Show the full option list")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     # Search & filter
@@ -1313,6 +1344,13 @@ def main():
     parser.add_argument("--export", choices=["csv", "json"], help="Export format")
 
     args = parser.parse_args()
+
+    if args.help_all:
+        parser.print_help()
+        return
+    if args.help:
+        print_short_help()
+        return
 
     sessions, transcripts = build_index()
 

@@ -1,0 +1,1308 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner [ref=e6]:
+      - heading "Navigation Menu" [level=2] [ref=e7]
+      - generic [ref=e8]:
+        - link "Homepage" [ref=e10] [cursor=pointer]:
+          - /url: /
+          - img [ref=e11]
+        - generic [ref=e13]:
+          - navigation "Global" [ref=e16]:
+            - list [ref=e17]:
+              - listitem [ref=e18]:
+                - button "Platform" [ref=e20] [cursor=pointer]:
+                  - text: Platform
+                  - img [ref=e21]
+              - listitem [ref=e23]:
+                - button "Solutions" [ref=e25] [cursor=pointer]:
+                  - text: Solutions
+                  - img [ref=e26]
+              - listitem [ref=e28]:
+                - button "Resources" [ref=e30] [cursor=pointer]:
+                  - text: Resources
+                  - img [ref=e31]
+              - listitem [ref=e33]:
+                - button "Open Source" [ref=e35] [cursor=pointer]:
+                  - text: Open Source
+                  - img [ref=e36]
+              - listitem [ref=e38]:
+                - button "Enterprise" [ref=e40] [cursor=pointer]:
+                  - text: Enterprise
+                  - img [ref=e41]
+              - listitem [ref=e43]:
+                - link "Pricing" [ref=e44] [cursor=pointer]:
+                  - /url: https://github.com/pricing
+                  - generic [ref=e45]: Pricing
+          - generic [ref=e46]:
+            - button "Search or jump to…" [ref=e49] [cursor=pointer]:
+              - img [ref=e51]
+            - link "Sign in" [ref=e54] [cursor=pointer]:
+              - /url: /login?return_to=https%3A%2F%2Fgithub.com%2Fclaibinis%2Fclaude-recall
+            - link "Sign up" [ref=e55] [cursor=pointer]:
+              - /url: /signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E&source=header-repo&source_repo=claibinis%2Fclaude-recall
+            - button "Appearance settings" [disabled] [ref=e58]:
+              - img
+  - main [ref=e62]:
+    - generic [ref=e63]:
+      - generic [ref=e64]:
+        - generic [ref=e66]:
+          - img [ref=e67]
+          - link "claibinis" [ref=e70] [cursor=pointer]:
+            - /url: /claibinis
+          - generic [ref=e71]: /
+          - strong [ref=e72]:
+            - link "claude-recall" [ref=e73] [cursor=pointer]:
+              - /url: /claibinis/claude-recall
+          - generic [ref=e74]: Public
+        - generic [ref=e75]:
+          - list:
+            - listitem [ref=e76]:
+              - link "You must be signed in to change notification settings" [ref=e77] [cursor=pointer]:
+                - /url: /login?return_to=%2Fclaibinis%2Fclaude-recall
+                - img [ref=e78]
+                - text: Notifications
+            - listitem [ref=e80]:
+              - link "Fork 0" [ref=e81] [cursor=pointer]:
+                - /url: /login?return_to=%2Fclaibinis%2Fclaude-recall
+                - img [ref=e82]
+                - text: Fork
+                - generic "0" [ref=e84]
+            - listitem [ref=e85]:
+              - link "You must be signed in to star a repository" [ref=e87] [cursor=pointer]:
+                - /url: /login?return_to=%2Fclaibinis%2Fclaude-recall
+                - img [ref=e88]
+                - text: Star
+                - generic "0 users starred this repository" [ref=e90]: "0"
+      - navigation "Repository" [ref=e91]:
+        - list [ref=e92]:
+          - listitem [ref=e93]:
+            - link "Code" [ref=e94] [cursor=pointer]:
+              - /url: /claibinis/claude-recall
+              - img [ref=e95]
+              - generic [ref=e97]: Code
+          - listitem [ref=e98]:
+            - link "Issues" [ref=e99] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/issues
+              - img [ref=e100]
+              - generic [ref=e103]: Issues
+          - listitem [ref=e104]:
+            - link "Pull requests" [ref=e105] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/pulls
+              - img [ref=e106]
+              - generic [ref=e108]: Pull requests
+          - listitem [ref=e109]:
+            - link "Actions" [ref=e110] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/actions
+              - img [ref=e111]
+              - generic [ref=e113]: Actions
+          - listitem [ref=e114]:
+            - link "Projects" [ref=e115] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/projects
+              - img [ref=e116]
+              - generic [ref=e118]: Projects
+          - listitem [ref=e119]:
+            - link "Security and quality" [ref=e120] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/security
+              - img [ref=e121]
+              - generic [ref=e123]: Security and quality
+          - listitem [ref=e124]:
+            - link "Insights" [ref=e125] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/pulse
+              - img [ref=e126]
+              - generic [ref=e128]: Insights
+    - generic [ref=e141]:
+      - heading "claibinis/claude-recall" [level=1] [ref=e143]
+      - generic [ref=e144]:
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - button "main branch" [ref=e151] [cursor=pointer]:
+                - generic [ref=e152]:
+                  - generic [ref=e154]:
+                    - img [ref=e156]
+                    - generic [ref=e159]: main
+                  - generic:
+                    - img
+              - generic [ref=e160]:
+                - link "Branches" [ref=e161] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/branches
+                  - generic [ref=e162]:
+                    - generic:
+                      - img
+                    - generic [ref=e163]: Branches
+                - link "Tags" [ref=e164] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/tags
+                  - generic [ref=e165]:
+                    - generic:
+                      - img
+                    - generic [ref=e166]: Tags
+            - generic [ref=e167]:
+              - generic [ref=e171]:
+                - img [ref=e173]
+                - combobox "Go to file" [ref=e175]
+              - button "Code" [ref=e176] [cursor=pointer]:
+                - generic [ref=e177]:
+                  - generic:
+                    - img
+                  - generic [ref=e178]: Code
+                  - generic:
+                    - img
+          - generic [ref=e179]:
+            - generic [ref=e180]:
+              - heading "Folders and files" [level=2] [ref=e181]
+              - table "Folders and files" [ref=e182]:
+                - rowgroup:
+                  - row "Name Last commit message Last commit date":
+                    - columnheader "Name"
+                    - columnheader "Last commit message":
+                      - generic "Last commit message"
+                    - columnheader "Last commit date":
+                      - generic "Last commit date"
+                - rowgroup [ref=e183]:
+                  - row "Latest commit History 9 Commits" [ref=e184]:
+                    - cell "Latest commit History 9 Commits" [ref=e185]:
+                      - generic [ref=e186]:
+                        - heading "Latest commit" [level=2] [ref=e187]
+                        - generic [ref=e190]:
+                          - heading "History" [level=2] [ref=e191]
+                          - link "9 Commits" [ref=e192] [cursor=pointer]:
+                            - /url: /claibinis/claude-recall/commits/main/
+                            - generic [ref=e193]:
+                              - generic:
+                                - img
+                              - generic [ref=e194]: 9 Commits
+                  - row ".gitignore, (File)" [ref=e195]:
+                    - cell ".gitignore, (File)" [ref=e196]:
+                      - generic [ref=e197]:
+                        - img [ref=e198]
+                        - link ".gitignore, (File)" [ref=e203] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/.gitignore
+                          - text: .gitignore
+                    - cell [ref=e204]
+                    - cell [ref=e206]
+                  - row "CHANGELOG.md, (File)" [ref=e209]:
+                    - cell "CHANGELOG.md, (File)" [ref=e210]:
+                      - generic [ref=e211]:
+                        - img [ref=e212]
+                        - link "CHANGELOG.md, (File)" [ref=e217] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/CHANGELOG.md
+                          - text: CHANGELOG.md
+                    - cell [ref=e218]
+                    - cell [ref=e220]
+                  - row "CLAUDE.md, (File)" [ref=e223]:
+                    - cell "CLAUDE.md, (File)" [ref=e224]:
+                      - generic [ref=e225]:
+                        - img [ref=e226]
+                        - link "CLAUDE.md, (File)" [ref=e231] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/CLAUDE.md
+                          - text: CLAUDE.md
+                    - cell [ref=e232]
+                    - cell [ref=e234]
+                  - row "LICENSE, (File)" [ref=e237]:
+                    - cell "LICENSE, (File)" [ref=e238]:
+                      - generic [ref=e239]:
+                        - img [ref=e240]
+                        - link "LICENSE, (File)" [ref=e245] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/LICENSE
+                          - text: LICENSE
+                    - cell [ref=e246]
+                    - cell [ref=e248]
+                  - row "README.md, (File)" [ref=e251]:
+                    - cell "README.md, (File)" [ref=e252]:
+                      - generic [ref=e253]:
+                        - img [ref=e254]
+                        - link "README.md, (File)" [ref=e259] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/README.md
+                          - text: README.md
+                    - cell [ref=e260]
+                    - cell [ref=e262]
+                  - row "cc, (File)" [ref=e265]:
+                    - cell "cc, (File)" [ref=e266]:
+                      - generic [ref=e267]:
+                        - img [ref=e268]
+                        - link "cc, (File)" [ref=e273] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/cc
+                          - text: cc
+                    - cell [ref=e274]
+                    - cell [ref=e276]
+                  - row "cc.bash, (File)" [ref=e279]:
+                    - cell "cc.bash, (File)" [ref=e280]:
+                      - generic [ref=e281]:
+                        - img [ref=e282]
+                        - link "cc.bash, (File)" [ref=e287] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/cc.bash
+                          - text: cc.bash
+                    - cell [ref=e288]
+                    - cell [ref=e290]
+                  - row "cc.ps1, (File)" [ref=e293]:
+                    - cell "cc.ps1, (File)" [ref=e294]:
+                      - generic [ref=e295]:
+                        - img [ref=e296]
+                        - link "cc.ps1, (File)" [ref=e301] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/cc.ps1
+                          - text: cc.ps1
+                    - cell [ref=e302]
+                    - cell [ref=e304]
+                  - row "claude-recall, (File)" [ref=e307]:
+                    - cell "claude-recall, (File)" [ref=e308]:
+                      - generic [ref=e309]:
+                        - img [ref=e310]
+                        - link "claude-recall, (File)" [ref=e315] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/claude-recall
+                          - text: claude-recall
+                    - cell [ref=e316]
+                    - cell [ref=e318]
+                  - row "claude-recall.cmd, (File)" [ref=e321]:
+                    - cell "claude-recall.cmd, (File)" [ref=e322]:
+                      - generic [ref=e323]:
+                        - img [ref=e324]
+                        - link "claude-recall.cmd, (File)" [ref=e329] [cursor=pointer]:
+                          - /url: /claibinis/claude-recall/blob/main/claude-recall.cmd
+                          - text: claude-recall.cmd
+                    - cell [ref=e330]
+                    - cell [ref=e332]
+            - generic [ref=e336]:
+              - generic [ref=e337]:
+                - heading "Repository files navigation" [level=2] [ref=e338]
+                - navigation "Repository files" [ref=e339]:
+                  - list [ref=e340]:
+                    - listitem [ref=e341]:
+                      - link "README" [ref=e342] [cursor=pointer]:
+                        - /url: "#"
+                        - img [ref=e344]
+                        - generic [ref=e346]: README
+                    - listitem [ref=e347]:
+                      - link "MIT license" [ref=e348] [cursor=pointer]:
+                        - /url: "#"
+                        - img [ref=e350]
+                        - generic [ref=e352]: MIT license
+                - button "Outline" [ref=e353] [cursor=pointer]:
+                  - img [ref=e354]
+              - article [ref=e357]:
+                - generic [ref=e358]:
+                  - heading "claude-recall" [level=1] [ref=e359]
+                  - 'link "Permalink: claude-recall" [ref=e360] [cursor=pointer]':
+                    - /url: "#claude-recall"
+                    - img [ref=e361]
+                - blockquote [ref=e363]:
+                  - paragraph [ref=e364]: Total recall for your Claude Code conversations.
+                - paragraph [ref=e365]: Search, analyze, and manage your Claude Code session history. Find that conversation you had three weeks ago, see how many tokens you've burned, and clean up old transcripts eating your disk.
+                - generic [ref=e366]:
+                  - heading "Why?" [level=2] [ref=e367]
+                  - 'link "Permalink: Why?" [ref=e368] [cursor=pointer]':
+                    - /url: "#why"
+                    - img [ref=e369]
+                - paragraph [ref=e371]:
+                  - text: Claude Code's built-in
+                  - code [ref=e372]: /resume
+                  - text: only searches by session name or exact ID. If you didn't name a session (and let's be honest — you didn't), it's gone into the void.
+                  - code [ref=e373]: claude-recall
+                  - text: indexes everything in
+                  - code [ref=e374]: ~/.claude/
+                  - text: and lets you find sessions by keyword, project, date, token usage, or disk size.
+                - generic [ref=e375]:
+                  - heading "Installation" [level=2] [ref=e376]
+                  - 'link "Permalink: Installation" [ref=e377] [cursor=pointer]':
+                    - /url: "#installation"
+                    - img [ref=e378]
+                - generic [ref=e380]:
+                  - generic [ref=e381]:
+                    - generic [ref=e382]: "# Clone it"
+                    - text: git clone https://github.com/claibinis/claude-recall.git cd claude-recall
+                    - generic [ref=e383]: "# Option A: symlink both tools to your PATH"
+                    - text: ln -s
+                    - generic [ref=e384]:
+                      - text: "\""
+                      - generic [ref=e385]: $(pwd)
+                      - text: /claude-recall"
+                    - text: ~/bin/claude-recall ln -s
+                    - generic [ref=e386]:
+                      - text: "\""
+                      - generic [ref=e387]: $(pwd)
+                      - text: /cc"
+                    - text: ~/bin/cc
+                    - generic [ref=e388]: "# Option B: copy them"
+                    - text: cp claude-recall cc ~/bin/
+                    - generic [ref=e389]: "# Option C: just run directly"
+                    - text: ./claude-recall
+                  - button "Copy code to clipboard" [ref=e391] [cursor=pointer]:
+                    - img [ref=e392]
+                - paragraph [ref=e395]:
+                  - strong [ref=e396]: "Requirements:"
+                  - text: "Python 3.6+ (no external dependencies). The session wrapper ships in three flavors — pick the one for your shell:"
+                  - code [ref=e397]: cc
+                  - text: (zsh),
+                  - code [ref=e398]: cc.bash
+                  - text: (bash), or
+                  - code [ref=e399]: cc.ps1
+                  - text: (Windows PowerShell).
+                - generic [ref=e400]:
+                  - heading "Windows" [level=3] [ref=e401]
+                  - 'link "Permalink: Windows" [ref=e402] [cursor=pointer]':
+                    - /url: "#windows"
+                    - img [ref=e403]
+                - paragraph [ref=e405]:
+                  - code [ref=e406]: claude-recall
+                  - text: is plain Python, so it runs on Windows too — invoke it as
+                  - code [ref=e407]: python claude-recall ...
+                  - text: ", or put this folder on your"
+                  - code [ref=e408]: PATH
+                  - text: and use the included
+                  - code [ref=e409]: claude-recall.cmd
+                  - text: launcher to just type
+                  - code [ref=e410]: claude-recall ...
+                  - text: . For the session wrapper, use
+                  - code [ref=e411]: cc.ps1
+                  - text: (e.g. add
+                  - code [ref=e412]: "function cc { & \"C:\\path\\to\\cc.ps1\" @args }"
+                  - text: to your PowerShell
+                  - code [ref=e413]: $PROFILE
+                  - text: ).
+                - generic [ref=e414]:
+                  - heading "Usage" [level=2] [ref=e415]
+                  - 'link "Permalink: Usage" [ref=e416] [cursor=pointer]':
+                    - /url: "#usage"
+                    - img [ref=e417]
+                - generic [ref=e419]:
+                  - heading "List all sessions" [level=3] [ref=e420]
+                  - 'link "Permalink: List all sessions" [ref=e421] [cursor=pointer]':
+                    - /url: "#list-all-sessions"
+                    - img [ref=e422]
+                - generic [ref=e424]:
+                  - generic [ref=e425]: claude-recall
+                  - button "Copy code to clipboard" [ref=e427] [cursor=pointer]:
+                    - img [ref=e428]
+                - generic [ref=e431]:
+                  - code [ref=e433]: Claude Code Sessions (83 of 83) [+ = transcript on disk, - = history only] 2026-06-02 09:44 [cf21fedb] + ( 4 msgs) laibinis find sessions 2026-06-01 12:48 [9e29a7a6] + ( 24 msgs) laibinis how long could one live on... 2026-05-28 07:23 [654f5fb5] + ( 50 msgs) laibinis why does the build fail when... ...
+                  - button "Copy code to clipboard" [ref=e435] [cursor=pointer]:
+                    - img [ref=e436]
+                - paragraph [ref=e439]:
+                  - text: The
+                  - code [ref=e440]: +
+                  - text: /
+                  - code [ref=e441]: "-"
+                  - text: indicator shows whether the full transcript file is still on disk or only the message index remains.
+                - generic [ref=e442]:
+                  - heading "Search by keyword(s)" [level=3] [ref=e443]
+                  - 'link "Permalink: Search by keyword(s)" [ref=e444] [cursor=pointer]':
+                    - /url: "#search-by-keywords"
+                    - img [ref=e445]
+                - generic [ref=e447]:
+                  - generic [ref=e448]:
+                    - text: claude-recall -s
+                    - generic [ref=e449]: "\"deployment\""
+                    - text: claude-recall -s
+                    - generic [ref=e450]: "\"deploy retry timeout\""
+                    - generic [ref=e451]: "# all three words must appear (AND)"
+                    - text: claude-recall -s
+                    - generic [ref=e452]: "\"auth login signup\""
+                    - text: "--any"
+                    - generic [ref=e453]: "# any of the words (OR)"
+                  - button "Copy code to clipboard" [ref=e455] [cursor=pointer]:
+                    - img [ref=e456]
+                - paragraph [ref=e459]:
+                  - text: A multi-word query is
+                  - strong [ref=e460]: AND by default
+                  - text: — every term must appear (in the prompts, the session name, or the project). Use
+                  - code [ref=e461]: "--any"
+                  - text: for OR. Searches show a
+                  - code [ref=e462]: ↳
+                  - text: snippet of the match under each result.
+                - paragraph [ref=e463]:
+                  - text: Add
+                  - code [ref=e464]: "-f"
+                  - text: "for full-text search through transcript files (slower, but catches assistant responses and tool output too — and the snippet comes from the matching line):"
+                - generic [ref=e465]:
+                  - generic [ref=e466]:
+                    - text: claude-recall -s
+                    - generic [ref=e467]: "\"playwright tools\""
+                    - text: "-f"
+                  - button "Copy code to clipboard" [ref=e469] [cursor=pointer]:
+                    - img [ref=e470]
+                - generic [ref=e473]:
+                  - heading "Read a session" [level=3] [ref=e474]
+                  - 'link "Permalink: Read a session" [ref=e475] [cursor=pointer]':
+                    - /url: "#read-a-session"
+                    - img [ref=e476]
+                - paragraph [ref=e478]:
+                  - text: Found the right session but want to
+                  - emphasis [ref=e479]: read
+                  - text: it without resuming?
+                  - code [ref=e480]: "--show"
+                  - text: "pretty-prints the conversation, collapsing tool noise:"
+                - generic [ref=e481]:
+                  - generic [ref=e482]:
+                    - text: claude-recall --show cf21fedb claude-recall --show cf21fedb --grep
+                    - generic [ref=e483]: "\"timeout\""
+                    - generic [ref=e484]: "# only turns mentioning \"timeout\", highlighted"
+                    - text: claude-recall --show cf21fedb --last 10
+                    - generic [ref=e485]: "# just the final 10 turns"
+                    - text: claude-recall --show cf21fedb --no-summary
+                    - generic [ref=e486]: "# skip auto-generated compaction recaps"
+                    - text: claude-recall --show cf21fedb --text-only
+                    - generic [ref=e487]: "# drop tool-only turns (prose only)"
+                  - button "Copy code to clipboard" [ref=e489] [cursor=pointer]:
+                    - img [ref=e490]
+                - paragraph [ref=e493]:
+                  - text: For a long session,
+                  - code [ref=e494]: "--last N"
+                  - text: ("what was I doing at the end of this?") and
+                  - code [ref=e495]: "--grep"
+                  - text: are the way in — a full dump of an 800-prompt session is tens of thousands of lines. Consecutive assistant messages (prose + their tool calls) are merged into one turn, and repeated tools collapse to
+                  - code [ref=e496]: Bash ×3
+                  - text: .
+                  - code [ref=e497]: "--no-summary"
+                  - text: hides the "session continued from a previous conversation" recap turns;
+                  - code [ref=e498]: "--text-only"
+                  - text: drops any turn with no prose.
+                - generic [ref=e499]:
+                  - heading "Filter by project, branch, or time" [level=3] [ref=e500]
+                  - 'link "Permalink: Filter by project, branch, or time" [ref=e501] [cursor=pointer]':
+                    - /url: "#filter-by-project-branch-or-time"
+                    - img [ref=e502]
+                - generic [ref=e504]:
+                  - generic [ref=e505]:
+                    - text: claude-recall --project ete-tools
+                    - generic [ref=e506]: "# matches the directory name (not the whole path)"
+                    - text: claude-recall --branch fix-auth
+                    - generic [ref=e507]: "# git branch substring"
+                    - text: claude-recall --since 7d
+                    - generic [ref=e508]: "# active in the last 7 days (also 24h, 2w, or 2026-04-01)"
+                    - text: claude-recall --until 2026-05-01
+                    - generic [ref=e509]: "# active before a date"
+                    - text: claude-recall --date 2026-04
+                    - generic [ref=e510]: "# started in a given month/day"
+                  - button "Copy code to clipboard" [ref=e512] [cursor=pointer]:
+                    - img [ref=e513]
+                - paragraph [ref=e516]:
+                  - text: Non-default branches show inline as
+                  - code [ref=e517]: project@branch
+                  - text: in the listing.
+                - generic [ref=e518]:
+                  - heading "Token usage and cost" [level=3] [ref=e519]
+                  - 'link "Permalink: Token usage and cost" [ref=e520] [cursor=pointer]':
+                    - /url: "#token-usage-and-cost"
+                    - img [ref=e521]
+                - generic [ref=e523]:
+                  - generic [ref=e524]:
+                    - generic [ref=e525]: "# Show cost estimate inline"
+                    - text: claude-recall --tokens -n 10
+                    - generic [ref=e526]: "# Detailed breakdown per session"
+                    - text: claude-recall --tokens --detail -n 5
+                    - generic [ref=e527]: "# Sort by cost (most expensive first)"
+                    - text: claude-recall --tokens --sort cost
+                  - button "Copy code to clipboard" [ref=e529] [cursor=pointer]:
+                    - img [ref=e530]
+                - generic [ref=e533]:
+                  - code [ref=e535]: "Detailed Token Usage: Session: 654f5fb5 | Model: claude-opus-4-6 Input: 264 Output: 43.2K Cache write: 733.3K Cache read: 5.2M Peak context: 5.9M API turns: 50 Est. cost: $10.98"
+                  - button "Copy code to clipboard" [ref=e537] [cursor=pointer]:
+                    - img [ref=e538]
+                - generic [ref=e541]:
+                  - heading "Peak context window" [level=3] [ref=e542]
+                  - 'link "Permalink: Peak context window" [ref=e543] [cursor=pointer]':
+                    - /url: "#peak-context-window"
+                    - img [ref=e544]
+                - paragraph [ref=e546]: "See which sessions pushed the context limit:"
+                - generic [ref=e547]:
+                  - generic [ref=e548]: claude-recall --context -n 10
+                  - button "Copy code to clipboard" [ref=e550] [cursor=pointer]:
+                    - img [ref=e551]
+                - paragraph [ref=e554]: Sessions exceeding 180K tokens are flagged with ⚠.
+                - generic [ref=e555]:
+                  - heading "Disk usage" [level=3] [ref=e556]
+                  - 'link "Permalink: Disk usage" [ref=e557] [cursor=pointer]':
+                    - /url: "#disk-usage"
+                    - img [ref=e558]
+                - generic [ref=e560]:
+                  - generic [ref=e561]:
+                    - generic [ref=e562]: "# Show file sizes inline"
+                    - text: claude-recall --size
+                    - generic [ref=e563]: "# Sort by size (largest first)"
+                    - text: claude-recall --size --sort size
+                  - button "Copy code to clipboard" [ref=e565] [cursor=pointer]:
+                    - img [ref=e566]
+                - generic [ref=e569]:
+                  - heading "Resume a session" [level=3] [ref=e570]
+                  - 'link "Permalink: Resume a session" [ref=e571] [cursor=pointer]':
+                    - /url: "#resume-a-session"
+                    - img [ref=e572]
+                - paragraph [ref=e574]:
+                  - text: Forgot where a session was and how to get back into it?
+                  - code [ref=e575]: "--resume"
+                  - text: prints the exact command — including the
+                  - code [ref=e576]: cd
+                  - text: "into the right working directory, since Claude Code's resume is project-scoped:"
+                - generic [ref=e577]:
+                  - generic [ref=e578]: claude-recall --resume d817ab64
+                  - button "Copy code to clipboard" [ref=e580] [cursor=pointer]:
+                    - img [ref=e581]
+                - generic [ref=e584]:
+                  - code [ref=e586]: "Session: d817ab64-b828-405f-86fe-3ba0397a0c50 Date: 2026-05-31 17:52 Project: cruisesort (main) Dir: /Users/you/github/cruisesort Resume with: cd /Users/you/github/cruisesort && claude --resume d817ab64-b828-405f-86fe-3ba0397a0c50"
+                  - button "Copy code to clipboard" [ref=e588] [cursor=pointer]:
+                    - img [ref=e589]
+                - paragraph [ref=e592]:
+                  - text: If you're already in the session's directory, the
+                  - code [ref=e593]: cd
+                  - text: is omitted. The 8-char prefix shown in the listing is all you need. Add
+                  - code [ref=e594]: "--exec"
+                  - text: "to skip the copy-paste and jump straight back in:"
+                - generic [ref=e595]:
+                  - generic [ref=e596]: claude-recall --resume d817ab64 --exec
+                  - button "Copy code to clipboard" [ref=e598] [cursor=pointer]:
+                    - img [ref=e599]
+                - generic [ref=e602]:
+                  - heading "Name a session" [level=3] [ref=e603]
+                  - 'link "Permalink: Name a session" [ref=e604] [cursor=pointer]':
+                    - /url: "#name-a-session"
+                    - img [ref=e605]
+                - paragraph [ref=e607]: "Most sessions are unnamed, which is the whole reason they're hard to find. Give one a name after the fact — it's stored separately and never touches the transcript:"
+                - generic [ref=e608]:
+                  - generic [ref=e609]:
+                    - text: claude-recall --set-name d817ab64
+                    - generic [ref=e610]: "\"gpu capacity planning\""
+                    - text: claude-recall --unname d817ab64
+                  - button "Copy code to clipboard" [ref=e612] [cursor=pointer]:
+                    - img [ref=e613]
+                - paragraph [ref=e616]:
+                  - text: Named sessions show a
+                  - code [ref=e617]: ★
+                  - text: in the listing and are matched by search. The name survives even if you later delete the transcript.
+                - generic [ref=e618]:
+                  - heading "Remove a specific session" [level=3] [ref=e619]
+                  - 'link "Permalink: Remove a specific session" [ref=e620] [cursor=pointer]':
+                    - /url: "#remove-a-specific-session"
+                    - img [ref=e621]
+                - generic [ref=e623]:
+                  - generic [ref=e624]:
+                    - text: claude-recall --remove cf21fedb
+                    - generic [ref=e625]: "# by 8-char prefix"
+                    - text: claude-recall --remove cf21fedb --dry-run
+                    - generic [ref=e626]: "# preview first"
+                  - button "Copy code to clipboard" [ref=e628] [cursor=pointer]:
+                    - img [ref=e629]
+                - generic [ref=e632]:
+                  - code [ref=e634]: "Session: cf21fedb-e69d-40d0-a2c4-077ad9feb67f Date: 2026-06-02 09:44 Project: laibinis Messages: 12 Summary: find sessions Disk: 860.3KB Remove this session's transcript? [y/N]"
+                  - button "Copy code to clipboard" [ref=e636] [cursor=pointer]:
+                    - img [ref=e637]
+                - paragraph [ref=e640]:
+                  - text: Only deletes the transcript file — the history index entry is preserved so the session still appears in search results (marked
+                  - code [ref=e641]: "-"
+                  - text: ).
+                - generic [ref=e642]:
+                  - heading "Bulk cleanup old transcripts" [level=3] [ref=e643]
+                  - 'link "Permalink: Bulk cleanup old transcripts" [ref=e644] [cursor=pointer]':
+                    - /url: "#bulk-cleanup-old-transcripts"
+                    - img [ref=e645]
+                - paragraph [ref=e647]: "Preview what would be deleted:"
+                - generic [ref=e648]:
+                  - generic [ref=e649]: claude-recall --clean --older-than 60 --dry-run
+                  - button "Copy code to clipboard" [ref=e651] [cursor=pointer]:
+                    - img [ref=e652]
+                - paragraph [ref=e655]: "Actually clean up (interactive confirmation):"
+                - generic [ref=e656]:
+                  - generic [ref=e657]: claude-recall --clean --older-than 60
+                  - button "Copy code to clipboard" [ref=e659] [cursor=pointer]:
+                    - img [ref=e660]
+                - paragraph [ref=e663]:
+                  - text: Cleanup
+                  - strong [ref=e664]: never
+                  - text: touches
+                  - code [ref=e665]: history.jsonl
+                  - text: — your session index is preserved so keyword search still works. Only transcript files (the large JSONL conversation logs) are removed.
+                - paragraph [ref=e666]:
+                  - text: To clear out throwaway sessions (a stray
+                  - code [ref=e667]: /exit
+                  - text: ", a one-line question) rather than old ones:"
+                - generic [ref=e668]:
+                  - generic [ref=e669]: claude-recall --prune-empty --dry-run claude-recall --prune-empty
+                  - button "Copy code to clipboard" [ref=e671] [cursor=pointer]:
+                    - img [ref=e672]
+                - generic [ref=e675]:
+                  - heading "Statistics" [level=3] [ref=e676]
+                  - 'link "Permalink: Statistics" [ref=e677] [cursor=pointer]':
+                    - /url: "#statistics"
+                    - img [ref=e678]
+                - generic [ref=e680]:
+                  - generic [ref=e681]:
+                    - text: claude-recall --stats
+                    - generic [ref=e682]: "# everything"
+                    - text: claude-recall --stats --project cruisesort
+                    - generic [ref=e683]: "# just one project"
+                    - text: claude-recall --stats --since 30d
+                    - generic [ref=e684]: "# just the last 30 days"
+                    - text: claude-recall --stats -s
+                    - generic [ref=e685]: "\"deploy\""
+                    - generic [ref=e686]: "# just sessions matching a search"
+                  - button "Copy code to clipboard" [ref=e688] [cursor=pointer]:
+                    - img [ref=e689]
+                - paragraph [ref=e692]:
+                  - code [ref=e693]: "--stats"
+                  - text: honors the same search and filters as the listing, so you can answer "how much did I spend on
+                  - emphasis [ref=e694]: project X
+                  - text: "?\" or \"what did this month cost?\" The header notes the active scope."
+                - generic [ref=e695]:
+                  - code [ref=e697]: "Sessions in history: 83 Transcripts on disk: 27 Total prompts: 2238 Disk usage: 61.0MB Date range: 2026-03-02 13:27 → 2026-06-02 09:44 Token Usage (transcripts on disk): Input: 2.1K Output: 512.3K Cache write: 8.2M Cache read: 62.4M Estimated total cost: $147.23 Cache efficiency: Reuse ratio: 88% (reads / all input tokens) Low-reuse sessions (paid to write cache, reused little): [a1b2c3d4] big-refactor write 2.1M read 412.0K reuse 16% By project: 44 laibinis 14 Few-Word 7 ete-tools ..."
+                  - button "Copy code to clipboard" [ref=e699] [cursor=pointer]:
+                    - img [ref=e700]
+                - paragraph [ref=e703]:
+                  - text: The
+                  - strong [ref=e704]: cache efficiency
+                  - text: block shows how much of your input was served from cache (cheap) versus freshly written (expensive), and flags sessions that paid to write a lot of cache they barely reused.
+                - generic [ref=e705]:
+                  - heading "Export" [level=3] [ref=e706]
+                  - 'link "Permalink: Export" [ref=e707] [cursor=pointer]':
+                    - /url: "#export"
+                    - img [ref=e708]
+                - generic [ref=e710]:
+                  - generic [ref=e711]:
+                    - text: claude-recall --export json > sessions.json claude-recall --export csv > sessions.csv claude-recall --export json --tokens
+                    - generic [ref=e712]: "# includes token data"
+                  - button "Copy code to clipboard" [ref=e714] [cursor=pointer]:
+                    - img [ref=e715]
+                - generic [ref=e718]:
+                  - heading "Composable flags" [level=3] [ref=e719]
+                  - 'link "Permalink: Composable flags" [ref=e720] [cursor=pointer]':
+                    - /url: "#composable-flags"
+                    - img [ref=e721]
+                - paragraph [ref=e723]:
+                  - code [ref=e724]: "--tokens"
+                  - text: ","
+                  - code [ref=e725]: "--size"
+                  - text: ", and"
+                  - code [ref=e726]: "--context"
+                  - text: are
+                  - strong [ref=e727]: display modifiers
+                  - text: "— use any combination with any filter:"
+                - generic [ref=e728]:
+                  - generic [ref=e729]:
+                    - generic [ref=e730]: "# Everything at once"
+                    - text: claude-recall --tokens --size --context -n 5
+                    - generic [ref=e731]: "# Search + enrichments"
+                    - text: claude-recall -s
+                    - generic [ref=e732]: "\"auth\""
+                    - text: "--project login --tokens --size --sort cost"
+                    - generic [ref=e733]: "# Sort by cost, show disk usage too"
+                    - text: claude-recall --sort cost --tokens --size -n 10
+                    - generic [ref=e734]: "# Detailed per-session breakdown (instead of inline)"
+                    - text: claude-recall --detail --project ete -n 3
+                  - button "Copy code to clipboard" [ref=e736] [cursor=pointer]:
+                    - img [ref=e737]
+                - generic [ref=e740]:
+                  - heading "All options" [level=2] [ref=e741]
+                  - 'link "Permalink: All options" [ref=e742] [cursor=pointer]':
+                    - /url: "#all-options"
+                    - img [ref=e743]
+                - table [ref=e746]:
+                  - rowgroup [ref=e747]:
+                    - row "Flag Description Composable" [ref=e748]:
+                      - columnheader "Flag" [ref=e749]
+                      - columnheader "Description" [ref=e750]
+                      - columnheader "Composable" [ref=e751]
+                  - rowgroup [ref=e752]:
+                    - row "Filters" [ref=e753]:
+                      - cell "Filters" [ref=e754]:
+                        - strong [ref=e755]: Filters
+                      - cell [ref=e756]
+                      - cell [ref=e757]
+                    - row "-s, --search Search by keyword(s); space-separated = AND" [ref=e758]:
+                      - cell "-s, --search" [ref=e759]:
+                        - code [ref=e760]: "-s"
+                        - text: ","
+                        - code [ref=e761]: "--search"
+                      - cell "Search by keyword(s); space-separated = AND" [ref=e762]
+                      - cell [ref=e763]
+                    - row "--any Match ANY search term instead of ALL (OR)" [ref=e764]:
+                      - cell "--any" [ref=e765]:
+                        - code [ref=e766]: "--any"
+                      - cell "Match ANY search term instead of ALL (OR)" [ref=e767]
+                      - cell [ref=e768]
+                    - row "-f, --full-text Include transcript content in search (shows snippets)" [ref=e769]:
+                      - cell "-f, --full-text" [ref=e770]:
+                        - code [ref=e771]: "-f"
+                        - text: ","
+                        - code [ref=e772]: "--full-text"
+                      - cell "Include transcript content in search (shows snippets)" [ref=e773]
+                      - cell [ref=e774]
+                    - row "--project Filter by project (directory) name" [ref=e775]:
+                      - cell "--project" [ref=e776]:
+                        - code [ref=e777]: "--project"
+                      - cell "Filter by project (directory) name" [ref=e778]
+                      - cell [ref=e779]
+                    - row "--branch Filter by git branch (substring)" [ref=e780]:
+                      - cell "--branch" [ref=e781]:
+                        - code [ref=e782]: "--branch"
+                      - cell "Filter by git branch (substring)" [ref=e783]
+                      - cell [ref=e784]
+                    - 'row "--since / --until Filter by last activity: 7d/24h/2w or YYYY-MM-DD" [ref=e785]':
+                      - cell "--since / --until" [ref=e786]:
+                        - code [ref=e787]: "--since"
+                        - text: /
+                        - code [ref=e788]: "--until"
+                      - 'cell "Filter by last activity: 7d/24h/2w or YYYY-MM-DD" [ref=e789]':
+                        - text: "Filter by last activity:"
+                        - code [ref=e790]: 7d
+                        - text: /
+                        - code [ref=e791]: 24h
+                        - text: /
+                        - code [ref=e792]: 2w
+                        - text: or
+                        - code [ref=e793]: YYYY-MM-DD
+                      - cell [ref=e794]
+                    - row "--date Filter by date prefix" [ref=e795]:
+                      - cell "--date" [ref=e796]:
+                        - code [ref=e797]: "--date"
+                      - cell "Filter by date prefix" [ref=e798]
+                      - cell [ref=e799]
+                    - row "Display modifiers" [ref=e800]:
+                      - cell "Display modifiers" [ref=e801]:
+                        - strong [ref=e802]: Display modifiers
+                      - cell [ref=e803]
+                      - cell [ref=e804]
+                    - row "--tokens Show token usage and cost inline ✓" [ref=e805]:
+                      - cell "--tokens" [ref=e806]:
+                        - code [ref=e807]: "--tokens"
+                      - cell "Show token usage and cost inline" [ref=e808]
+                      - cell "✓" [ref=e809]
+                    - row "--size Show transcript file sizes inline ✓" [ref=e810]:
+                      - cell "--size" [ref=e811]:
+                        - code [ref=e812]: "--size"
+                      - cell "Show transcript file sizes inline" [ref=e813]
+                      - cell "✓" [ref=e814]
+                    - row "--context Show peak context window inline (model-aware ⚠) ✓" [ref=e815]:
+                      - cell "--context" [ref=e816]:
+                        - code [ref=e817]: "--context"
+                      - cell "Show peak context window inline (model-aware ⚠)" [ref=e818]
+                      - cell "✓" [ref=e819]
+                    - row "--detail Expanded per-session breakdown" [ref=e820]:
+                      - cell "--detail" [ref=e821]:
+                        - code [ref=e822]: "--detail"
+                      - cell "Expanded per-session breakdown" [ref=e823]
+                      - cell [ref=e824]
+                    - row "-v, --verbose Show more messages per session ✓" [ref=e825]:
+                      - cell "-v, --verbose" [ref=e826]:
+                        - code [ref=e827]: "-v"
+                        - text: ","
+                        - code [ref=e828]: "--verbose"
+                      - cell "Show more messages per session" [ref=e829]
+                      - cell "✓" [ref=e830]
+                    - row "Listing" [ref=e831]:
+                      - cell "Listing" [ref=e832]:
+                        - strong [ref=e833]: Listing
+                      - cell [ref=e834]
+                      - cell [ref=e835]
+                    - row "-n, --limit Limit number of results" [ref=e836]:
+                      - cell "-n, --limit" [ref=e837]:
+                        - code [ref=e838]: "-n"
+                        - text: ","
+                        - code [ref=e839]: "--limit"
+                      - cell "Limit number of results" [ref=e840]
+                      - cell [ref=e841]
+                    - row "--reverse Show oldest first" [ref=e842]:
+                      - cell "--reverse" [ref=e843]:
+                        - code [ref=e844]: "--reverse"
+                      - cell "Show oldest first" [ref=e845]
+                      - cell [ref=e846]
+                    - 'row "--sort Sort by: date (start), recent (last activity), tokens, cost, size, messages" [ref=e847]':
+                      - cell "--sort" [ref=e848]:
+                        - code [ref=e849]: "--sort"
+                      - 'cell "Sort by: date (start), recent (last activity), tokens, cost, size, messages" [ref=e850]':
+                        - text: "Sort by:"
+                        - code [ref=e851]: date
+                        - text: (start),
+                        - code [ref=e852]: recent
+                        - text: (last activity),
+                        - code [ref=e853]: tokens
+                        - text: ","
+                        - code [ref=e854]: cost
+                        - text: ","
+                        - code [ref=e855]: size
+                        - text: ","
+                        - code [ref=e856]: messages
+                      - cell [ref=e857]
+                    - row "Actions" [ref=e858]:
+                      - cell "Actions" [ref=e859]:
+                        - strong [ref=e860]: Actions
+                      - cell [ref=e861]
+                      - cell [ref=e862]
+                    - row "--show ID Print a session's conversation" [ref=e863]:
+                      - cell "--show ID" [ref=e864]:
+                        - code [ref=e865]: "--show ID"
+                      - cell "Print a session's conversation" [ref=e866]
+                      - cell [ref=e867]
+                    - row "--grep TERMS With --show, only matching turns (highlighted)" [ref=e868]:
+                      - cell "--grep TERMS" [ref=e869]:
+                        - code [ref=e870]: "--grep TERMS"
+                      - cell "With --show, only matching turns (highlighted)" [ref=e871]:
+                        - text: With
+                        - code [ref=e872]: "--show"
+                        - text: ", only matching turns (highlighted)"
+                      - cell [ref=e873]
+                    - row "--last N With --show, only the final N turns" [ref=e874]:
+                      - cell "--last N" [ref=e875]:
+                        - code [ref=e876]: "--last N"
+                      - cell "With --show, only the final N turns" [ref=e877]:
+                        - text: With
+                        - code [ref=e878]: "--show"
+                        - text: ", only the final N turns"
+                      - cell [ref=e879]
+                    - row "--no-summary With --show, skip compaction-summary turns" [ref=e880]:
+                      - cell "--no-summary" [ref=e881]:
+                        - code [ref=e882]: "--no-summary"
+                      - cell "With --show, skip compaction-summary turns" [ref=e883]:
+                        - text: With
+                        - code [ref=e884]: "--show"
+                        - text: ", skip compaction-summary turns"
+                      - cell [ref=e885]
+                    - row "--text-only With --show, only turns with prose (drop tool-only)" [ref=e886]:
+                      - cell "--text-only" [ref=e887]:
+                        - code [ref=e888]: "--text-only"
+                      - cell "With --show, only turns with prose (drop tool-only)" [ref=e889]:
+                        - text: With
+                        - code [ref=e890]: "--show"
+                        - text: ", only turns with prose (drop tool-only)"
+                      - cell [ref=e891]
+                    - row "--resume ID Print the command to resume a session (with cd)" [ref=e892]:
+                      - cell "--resume ID" [ref=e893]:
+                        - code [ref=e894]: "--resume ID"
+                      - cell "Print the command to resume a session (with cd)" [ref=e895]:
+                        - text: Print the command to resume a session (with
+                        - code [ref=e896]: cd
+                        - text: )
+                      - cell [ref=e897]
+                    - row "--exec With --resume, run the command instead of printing" [ref=e898]:
+                      - cell "--exec" [ref=e899]:
+                        - code [ref=e900]: "--exec"
+                      - cell "With --resume, run the command instead of printing" [ref=e901]:
+                        - text: With
+                        - code [ref=e902]: "--resume"
+                        - text: ", run the command instead of printing"
+                      - cell [ref=e903]
+                    - row "--set-name ID NAME Assign a name to a session" [ref=e904]:
+                      - cell "--set-name ID NAME" [ref=e905]:
+                        - code [ref=e906]: "--set-name ID NAME"
+                      - cell "Assign a name to a session" [ref=e907]
+                      - cell [ref=e908]
+                    - row "--unname ID Remove a session's name" [ref=e909]:
+                      - cell "--unname ID" [ref=e910]:
+                        - code [ref=e911]: "--unname ID"
+                      - cell "Remove a session's name" [ref=e912]
+                      - cell [ref=e913]
+                    - row "--remove ID Remove a specific session transcript" [ref=e914]:
+                      - cell "--remove ID" [ref=e915]:
+                        - code [ref=e916]: "--remove ID"
+                      - cell "Remove a specific session transcript" [ref=e917]
+                      - cell [ref=e918]
+                    - row "--clean Bulk cleanup old transcripts" [ref=e919]:
+                      - cell "--clean" [ref=e920]:
+                        - code [ref=e921]: "--clean"
+                      - cell "Bulk cleanup old transcripts" [ref=e922]
+                      - cell [ref=e923]
+                    - row "--prune-empty Remove throwaway sessions (≤1 prompt)" [ref=e924]:
+                      - cell "--prune-empty" [ref=e925]:
+                        - code [ref=e926]: "--prune-empty"
+                      - cell "Remove throwaway sessions (≤1 prompt)" [ref=e927]
+                      - cell [ref=e928]
+                    - 'row "--older-than Days threshold for --clean (default: 90)" [ref=e929]':
+                      - cell "--older-than" [ref=e930]:
+                        - code [ref=e931]: "--older-than"
+                      - 'cell "Days threshold for --clean (default: 90)" [ref=e932]'
+                      - cell [ref=e933]
+                    - row "--dry-run Preview without deleting" [ref=e934]:
+                      - cell "--dry-run" [ref=e935]:
+                        - code [ref=e936]: "--dry-run"
+                      - cell "Preview without deleting" [ref=e937]
+                      - cell [ref=e938]
+                    - row "--stats Summary statistics (incl. cache efficiency)" [ref=e939]:
+                      - cell "--stats" [ref=e940]:
+                        - code [ref=e941]: "--stats"
+                      - cell "Summary statistics (incl. cache efficiency)" [ref=e942]
+                      - cell [ref=e943]
+                    - row "Export" [ref=e944]:
+                      - cell "Export" [ref=e945]:
+                        - strong [ref=e946]: Export
+                      - cell [ref=e947]
+                      - cell [ref=e948]
+                    - row "--export Export as json or csv" [ref=e949]:
+                      - cell "--export" [ref=e950]:
+                        - code [ref=e951]: "--export"
+                      - cell "Export as json or csv" [ref=e952]:
+                        - text: Export as
+                        - code [ref=e953]: json
+                        - text: or
+                        - code [ref=e954]: csv
+                      - cell [ref=e955]
+                - generic [ref=e956]:
+                  - heading "cc — Session wrapper" [level=2] [ref=e957]:
+                    - code [ref=e958]: cc
+                    - text: — Session wrapper
+                  - 'link "Permalink: cc — Session wrapper" [ref=e959] [cursor=pointer]':
+                    - /url: "#cc--session-wrapper"
+                    - img [ref=e960]
+                - paragraph [ref=e962]:
+                  - text: The
+                  - code [ref=e963]: cc
+                  - text: command wraps
+                  - code [ref=e964]: claude
+                  - text: "with two quality-of-life prompts:"
+                - list [ref=e965]:
+                  - listitem [ref=e966]:
+                    - strong [ref=e967]: On start
+                    - text: — asks for a session name (colorized, skippable with Enter)
+                  - listitem [ref=e968]:
+                    - strong [ref=e969]: On exit
+                    - text: — asks whether to keep, discard, or bulk-clean old transcripts
+                - paragraph [ref=e970]:
+                  - text: Three equivalent versions are included — symlink/alias whichever matches your shell to
+                  - code [ref=e971]: cc
+                  - text: ":"
+                - table [ref=e973]:
+                  - rowgroup [ref=e974]:
+                    - row "Shell File" [ref=e975]:
+                      - columnheader "Shell" [ref=e976]
+                      - columnheader "File" [ref=e977]
+                  - rowgroup [ref=e978]:
+                    - row "zsh cc" [ref=e979]:
+                      - cell "zsh" [ref=e980]
+                      - cell "cc" [ref=e981]:
+                        - code [ref=e982]: cc
+                    - row "bash cc.bash" [ref=e983]:
+                      - cell "bash" [ref=e984]
+                      - cell "cc.bash" [ref=e985]:
+                        - code [ref=e986]: cc.bash
+                    - row "Windows PowerShell cc.ps1" [ref=e987]:
+                      - cell "Windows PowerShell" [ref=e988]
+                      - cell "cc.ps1" [ref=e989]:
+                        - code [ref=e990]: cc.ps1
+                - paragraph [ref=e991]:
+                  - text: All three honor the same
+                  - code [ref=e992]: CC_SKIP_NAME
+                  - text: /
+                  - code [ref=e993]: CC_SKIP_EXIT
+                  - text: /
+                  - code [ref=e994]: CC_AUTO_CLEAN_DAYS
+                  - text: settings.
+                - generic [ref=e995]:
+                  - code [ref=e997]: "$ cc Session name (enter to skip): TEL GPU capacity planning → TEL GPU capacity planning [... normal Claude Code session ...] Keep this session transcript? [Y/n/clean]: y Session kept."
+                  - button "Copy code to clipboard" [ref=e999] [cursor=pointer]:
+                    - img [ref=e1000]
+                - generic [ref=e1003]:
+                  - heading "Options at exit" [level=3] [ref=e1004]
+                  - 'link "Permalink: Options at exit" [ref=e1005] [cursor=pointer]':
+                    - /url: "#options-at-exit"
+                    - img [ref=e1006]
+                - table [ref=e1009]:
+                  - rowgroup [ref=e1010]:
+                    - row "Input Action" [ref=e1011]:
+                      - columnheader "Input" [ref=e1012]
+                      - columnheader "Action" [ref=e1013]
+                  - rowgroup [ref=e1014]:
+                    - row "y or Enter Keep the transcript (default)" [ref=e1015]:
+                      - cell "y or Enter" [ref=e1016]:
+                        - code [ref=e1017]: "y"
+                        - text: or Enter
+                      - cell "Keep the transcript (default)" [ref=e1018]
+                    - row "n Delete the transcript for the session that just ended" [ref=e1019]:
+                      - cell "n" [ref=e1020]:
+                        - code [ref=e1021]: "n"
+                      - cell "Delete the transcript for the session that just ended" [ref=e1022]
+                    - row "clean Run claude-recall --clean to bulk-remove old transcripts" [ref=e1023]:
+                      - cell "clean" [ref=e1024]:
+                        - code [ref=e1025]: clean
+                      - cell "Run claude-recall --clean to bulk-remove old transcripts" [ref=e1026]:
+                        - text: Run
+                        - code [ref=e1027]: claude-recall --clean
+                        - text: to bulk-remove old transcripts
+                - generic [ref=e1028]:
+                  - heading "Configuration" [level=3] [ref=e1029]
+                  - 'link "Permalink: Configuration" [ref=e1030] [cursor=pointer]':
+                    - /url: "#configuration"
+                    - img [ref=e1031]
+                - paragraph [ref=e1033]:
+                  - text: Set these in your
+                  - code [ref=e1034]: .zshrc
+                  - text: "to change behavior:"
+                - generic [ref=e1035]:
+                  - generic [ref=e1036]:
+                    - text: export CC_SKIP_NAME=1
+                    - generic [ref=e1037]: "# Never prompt for session name"
+                    - text: export CC_SKIP_EXIT=1
+                    - generic [ref=e1038]: "# Never prompt on exit"
+                    - text: export CC_AUTO_CLEAN_DAYS=60
+                    - generic [ref=e1039]: "# Days threshold for 'clean' option (default: 90)"
+                  - button "Copy code to clipboard" [ref=e1041] [cursor=pointer]:
+                    - img [ref=e1042]
+                - paragraph [ref=e1045]:
+                  - text: The wrapper is transparent — all arguments pass through to
+                  - code [ref=e1046]: claude
+                  - text: ":"
+                - generic [ref=e1047]:
+                  - generic [ref=e1048]:
+                    - text: cc --model sonnet
+                    - generic [ref=e1049]: "# session name prompt, then launches with sonnet"
+                    - text: cc -n
+                    - generic [ref=e1050]: "\"already named\""
+                    - generic [ref=e1051]: "# skips name prompt (already provided)"
+                    - text: cc -p
+                    - generic [ref=e1052]: "\"one-shot question\""
+                    - generic [ref=e1053]: "# skips both prompts (print mode)"
+                  - button "Copy code to clipboard" [ref=e1055] [cursor=pointer]:
+                    - img [ref=e1056]
+                - separator [ref=e1059]
+                - generic [ref=e1060]:
+                  - heading "How Claude Code stores sessions" [level=2] [ref=e1061]
+                  - 'link "Permalink: How Claude Code stores sessions" [ref=e1062] [cursor=pointer]':
+                    - /url: "#how-claude-code-stores-sessions"
+                    - img [ref=e1063]
+                - generic [ref=e1065]:
+                  - code [ref=e1067]: "~/.claude/ ├── history.jsonl # Index of all prompts (lightweight, never deleted) ├── .claude-recall-cache.json # claude-recall's own metadata cache (auto-managed) ├── .claude-recall-names.json # your --set-name labels (auto-managed) ├── sessions/ # Active session PIDs │ └── 45394.json └── projects/ # Transcripts organized by working directory ├── -Users-you/ # Sessions started from ~/ │ ├── abc123.jsonl # Full conversation transcript │ └── abc123/ # Subagent transcripts, tool results ├── -Users-you-myrepo/ # Sessions started from ~/myrepo └── ..."
+                  - button "Copy code to clipboard" [ref=e1069] [cursor=pointer]:
+                    - img [ref=e1070]
+                - list [ref=e1073]:
+                  - listitem [ref=e1074]:
+                    - strong [ref=e1075]: Transcript JSONL
+                    - text: — full conversation including assistant responses, tool calls, usage data, the working directory, and git branch.
+                    - strong [ref=e1076]:
+                      - text: This is what
+                      - code [ref=e1077]: claude-recall
+                      - text: indexes.
+                    - text: These are the large files.
+                  - listitem [ref=e1078]:
+                    - strong [ref=e1079]: history.jsonl
+                    - text: — one line per prompt you sent.
+                    - code [ref=e1080]: claude-recall
+                    - text: reads it only to keep showing sessions whose transcript has been deleted (marked
+                    - code [ref=e1081]: "-"
+                    - text: ).
+                  - listitem [ref=e1082]:
+                    - text: Session IDs are UUIDs. The project directory name is the working directory path with
+                    - code [ref=e1083]: /
+                    - text: replaced by
+                    - code [ref=e1084]: "-"
+                    - text: .
+                - generic [ref=e1085]:
+                  - heading "The cache" [level=3] [ref=e1086]
+                  - 'link "Permalink: The cache" [ref=e1087] [cursor=pointer]':
+                    - /url: "#the-cache"
+                    - img [ref=e1088]
+                - paragraph [ref=e1090]:
+                  - code [ref=e1091]: claude-recall
+                  - text: builds its index by scanning every transcript, then caches the parsed metadata in
+                  - code [ref=e1092]: ~/.claude/.claude-recall-cache.json
+                  - text: . On later runs it re-parses only the transcripts whose
+                  - code [ref=e1093]: mtime
+                  - text: /
+                  - code [ref=e1094]: size
+                  - text: "changed — so a repeat run is near-instant even with hundreds of sessions. The cache is fully disposable: delete it any time and it rebuilds on the next run."
+                - generic [ref=e1095]:
+                  - heading "Configuration" [level=2] [ref=e1096]
+                  - 'link "Permalink: Configuration" [ref=e1097] [cursor=pointer]':
+                    - /url: "#configuration-1"
+                    - img [ref=e1098]
+                - paragraph [ref=e1100]:
+                  - text: Set
+                  - code [ref=e1101]: CLAUDE_DIR
+                  - text: "environment variable if your Claude config lives somewhere non-standard:"
+                - generic [ref=e1102]:
+                  - generic [ref=e1103]: export CLAUDE_DIR=/custom/path/.claude
+                  - button "Copy code to clipboard" [ref=e1105] [cursor=pointer]:
+                    - img [ref=e1106]
+                - paragraph [ref=e1109]:
+                  - text: Cost estimates use default Opus pricing. Edit the
+                  - code [ref=e1110]: PRICING
+                  - text: dict in the script to adjust rates.
+                - paragraph [ref=e1111]:
+                  - text: The context-window warning (⚠) fires at 90% of the model's window by default. Override the threshold with
+                  - code [ref=e1112]: CLAUDE_RECALL_CTX_WARN
+                  - text: (e.g.
+                  - code [ref=e1113]: export CLAUDE_RECALL_CTX_WARN=0.8
+                  - text: ).
+                - generic [ref=e1114]:
+                  - heading "Tips" [level=2] [ref=e1115]
+                  - 'link "Permalink: Tips" [ref=e1116] [cursor=pointer]':
+                    - /url: "#tips"
+                    - img [ref=e1117]
+                - list [ref=e1119]:
+                  - listitem [ref=e1120]:
+                    - strong [ref=e1121]:
+                      - text: Use
+                      - code [ref=e1122]: cc
+                      - text: instead of
+                      - code [ref=e1123]: claude
+                    - text: to get automatic name prompts, or name manually with
+                    - code [ref=e1124]: claude -n "my session"
+                    - text: — named sessions are easier to find with both
+                    - code [ref=e1125]: /resume
+                    - text: and
+                    - code [ref=e1126]: claude-recall
+                    - text: .
+                  - listitem [ref=e1127]:
+                    - strong [ref=e1128]: Jump back into any session
+                    - text: with
+                    - code [ref=e1129]: claude-recall --resume <prefix>
+                    - text: — it hands you the
+                    - code [ref=e1130]: cd
+                    - text: +
+                    - code [ref=e1131]: claude --resume
+                    - text: command, so you don't have to remember which directory the session belonged to.
+                  - listitem [ref=e1132]:
+                    - strong [ref=e1133]: Transcripts get pruned
+                    - text: over time. If a session shows
+                    - code [ref=e1134]: "-"
+                    - text: (history only), the full transcript was cleaned up. The message index in history.jsonl persists.
+                  - listitem [ref=e1135]:
+                    - strong [ref=e1136]: Full-text search
+                    - text: (
+                    - code [ref=e1137]: "-f"
+                    - text: ) is slower because it reads every transcript file on disk. Use keyword search first, add
+                    - code [ref=e1138]: "-f"
+                    - text: if you need to search assistant responses.
+                - generic [ref=e1139]:
+                  - heading "License" [level=2] [ref=e1140]
+                  - 'link "Permalink: License" [ref=e1141] [cursor=pointer]':
+                    - /url: "#license"
+                    - img [ref=e1142]
+                - paragraph [ref=e1144]: MIT
+        - generic [ref=e1148]:
+          - generic [ref=e1151]:
+            - heading "About" [level=2] [ref=e1152]
+            - paragraph [ref=e1153]: Search, analyze, and manage your Claude Code session history
+            - heading "Topics" [level=3] [ref=e1154]
+            - generic [ref=e1156]:
+              - link "python" [ref=e1157] [cursor=pointer]:
+                - /url: /topics/python
+              - link "cli" [ref=e1158] [cursor=pointer]:
+                - /url: /topics/cli
+              - link "developer-tools" [ref=e1159] [cursor=pointer]:
+                - /url: /topics/developer-tools
+              - link "session-management" [ref=e1160] [cursor=pointer]:
+                - /url: /topics/session-management
+              - link "claude" [ref=e1161] [cursor=pointer]:
+                - /url: /topics/claude
+              - link "claude-code" [ref=e1162] [cursor=pointer]:
+                - /url: /topics/claude-code
+            - heading "Resources" [level=3] [ref=e1163]
+            - link "Readme" [ref=e1165] [cursor=pointer]:
+              - /url: "#readme-ov-file"
+              - img [ref=e1166]
+              - text: Readme
+            - heading "License" [level=3] [ref=e1168]
+            - link "MIT license" [ref=e1170] [cursor=pointer]:
+              - /url: "#MIT-1-ov-file"
+              - img [ref=e1171]
+              - text: MIT license
+            - link "Activity" [ref=e1174] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/activity
+              - img [ref=e1175]
+              - text: Activity
+            - heading "Stars" [level=3] [ref=e1177]
+            - link "0 stars" [ref=e1179] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/stargazers
+              - img [ref=e1180]
+              - strong [ref=e1182]: "0"
+              - text: stars
+            - heading "Watchers" [level=3] [ref=e1183]
+            - link "0 watching" [ref=e1185] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/watchers
+              - img [ref=e1186]
+              - strong [ref=e1188]: "0"
+              - text: watching
+            - heading "Forks" [level=3] [ref=e1189]
+            - link "0 forks" [ref=e1191] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/forks
+              - img [ref=e1192]
+              - strong [ref=e1194]: "0"
+              - text: forks
+            - link "Report repository" [ref=e1196] [cursor=pointer]:
+              - /url: /contact/report-content?content_url=https%3A%2F%2Fgithub.com%2Fclaibinis%2Fclaude-recall&report=claibinis+%28user%29
+          - generic [ref=e1198]:
+            - heading "Releases 1" [level=2] [ref=e1199]:
+              - link "Releases 1" [ref=e1200] [cursor=pointer]:
+                - /url: /claibinis/claude-recall/releases
+                - text: Releases
+                - generic "1" [ref=e1201]
+            - link "v1.0.0 Latest Jun 5, 20265 minutes ago" [ref=e1202] [cursor=pointer]:
+              - /url: /claibinis/claude-recall/releases/tag/v1.0.0
+              - img [ref=e1203]
+              - generic [ref=e1205]:
+                - generic [ref=e1206]:
+                  - generic [ref=e1207]: v1.0.0
+                  - 'generic "Label: Latest" [ref=e1208]': Latest
+                - generic [ref=e1209]: Jun 5, 20265 minutes ago
+          - generic "Loading latest packages" [ref=e1212]:
+            - heading "Packages" [level=2] [ref=e1213]:
+              - link "Packages" [ref=e1214] [cursor=pointer]:
+                - /url: /users/claibinis/packages?repo_name=claude-recall
+          - generic "Loading contributors" [ref=e1226]:
+            - generic:
+              - heading "Contributors" [level=2] [ref=e1227]:
+                - link "Contributors" [ref=e1228] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/graphs/contributors
+              - list [ref=e1229]:
+                - listitem [ref=e1230]
+                - listitem [ref=e1232]
+                - listitem [ref=e1234]
+          - generic [ref=e1237]:
+            - heading "Languages" [level=2] [ref=e1238]
+            - list [ref=e1245]:
+              - listitem [ref=e1246]:
+                - link "Python 83.3%" [ref=e1247] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/search?l=python
+                  - img [ref=e1248]
+                  - generic [ref=e1250]: Python
+                  - generic [ref=e1251]: 83.3%
+              - listitem [ref=e1252]:
+                - link "Shell 10.9%" [ref=e1253] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/search?l=shell
+                  - img [ref=e1254]
+                  - generic [ref=e1256]: Shell
+                  - generic [ref=e1257]: 10.9%
+              - listitem [ref=e1258]:
+                - link "PowerShell 5.2%" [ref=e1259] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/search?l=powershell
+                  - img [ref=e1260]
+                  - generic [ref=e1262]: PowerShell
+                  - generic [ref=e1263]: 5.2%
+              - listitem [ref=e1264]:
+                - link "Batchfile 0.6%" [ref=e1265] [cursor=pointer]:
+                  - /url: /claibinis/claude-recall/search?l=batchfile
+                  - img [ref=e1266]
+                  - generic [ref=e1268]: Batchfile
+                  - generic [ref=e1269]: 0.6%
+  - contentinfo [ref=e1271]:
+    - heading "Footer" [level=2] [ref=e1272]
+    - generic [ref=e1273]:
+      - generic [ref=e1274]:
+        - link "GitHub Homepage" [ref=e1275] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e1276]
+        - generic [ref=e1278]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=e1279]:
+        - heading "Footer navigation" [level=3] [ref=e1280]
+        - list "Footer navigation" [ref=e1281]:
+          - listitem [ref=e1282]:
+            - link "Terms" [ref=e1283] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=e1284]:
+            - link "Privacy" [ref=e1285] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=e1286]:
+            - link "Security" [ref=e1287] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=e1288]:
+            - link "Status" [ref=e1289] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=e1290]:
+            - link "Community" [ref=e1291] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=e1292]:
+            - link "Docs" [ref=e1293] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=e1294]:
+            - link "Contact" [ref=e1295] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=e1296]:
+            - button "Manage cookies" [ref=e1298] [cursor=pointer]
+          - listitem [ref=e1299]:
+            - button "Do not share my personal information" [ref=e1301] [cursor=pointer]
