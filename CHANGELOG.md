@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-06-05
 
 - **Custom model pricing** — `scripts/gen-pricing` generates a pricing file from any
   LiteLLM gateway's standard `/model/info` endpoint (credentials supplied via
@@ -8,6 +8,8 @@
   `CLAUDE_RECALL_PRICING_FILE` to override the built-in default rates; unset, defaults
   are unchanged. Model lookup is now longest-match, so `claude-opus-4-8` beats a generic
   `claude-opus-4` entry.
+- **Two-tier help** — concise `-h`/`--help` for everyday flags; `--help-all` prints the
+  full option reference.
 
 ## 1.0.0
 
