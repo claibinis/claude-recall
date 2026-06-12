@@ -84,7 +84,7 @@ main() {
             clean|c)
                 # Run cleanup
                 if command -v claude-recall &>/dev/null; then
-                    claude-recall --clean --older-than "$CC_AUTO_CLEAN_DAYS"
+                    claude-recall clean --older-than "$CC_AUTO_CLEAN_DAYS"
                 else
                     printf "${_cc_color_dim}claude-recall not found in PATH. Install it for cleanup.${_cc_color_reset}\n"
                 fi

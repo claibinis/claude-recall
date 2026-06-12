@@ -73,7 +73,7 @@ if ($SkipExit -ne '1' -and $code -eq 0) {
         }
         '^(clean|c)$' {
             if (Get-Command claude-recall -ErrorAction SilentlyContinue) {
-                claude-recall --clean --older-than $AutoCleanDays
+                claude-recall clean --older-than $AutoCleanDays
             }
             else {
                 Write-Host 'claude-recall not found in PATH. Install it for cleanup.' -ForegroundColor DarkGray
