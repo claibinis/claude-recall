@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.1
+
+- **`gen-pricing` gives a clear error on non-JSON responses** instead of a raw
+  `JSONDecodeError` traceback. When `/model/info` returns an empty/HTML body (wrong
+  base URL, an SSO/login page, or an insufficient key), it now reports the
+  Content-Type, byte count, and first bytes received, with guidance. Also sends an
+  `Accept: application/json` request header (some gateways return HTML without it).
+
 ## 2.3.0
 
 - **Pricing file is now auto-discovered** — no env var required. claude-recall

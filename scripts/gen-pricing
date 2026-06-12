@@ -80,7 +80,10 @@ def main():
                  "  export LITELLM_API_KEY=sk-...")
 
     url = base.rstrip("/") + "/model/info"
-    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + key})
+    req = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + key,
+        "Accept": "application/json",  # some gateways return HTML without this
+    })
 
     ctx = None
     if os.environ.get("LITELLM_INSECURE"):
@@ -90,14 +93,32 @@ def main():
 
     try:
         with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-            payload = json.load(resp)
+            ctype = resp.headers.get("Content-Type", "")
+            body = resp.read()
     except urllib.error.HTTPError as e:
-        sys.exit("error: {} returned HTTP {} {}. Check LITELLM_API_KEY / your login."
-                 .format(url, e.code, e.reason))
+        detail = ""
+        try:
+            detail = "\n  Response: " + e.read()[:300].decode("utf-8", "replace").strip()
+        except Exception:
+            pass
+        sys.exit("error: {} returned HTTP {} {}. Check LITELLM_API_KEY / your login.{}"
+                 .format(url, e.code, e.reason, detail))
     except urllib.error.URLError as e:
         sys.exit("error: could not reach {}: {}\n"
                  "  (for an internal gateway with a private CA, try LITELLM_INSECURE=1)"
                  .format(url, e.reason))
+
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        snippet = body[:300].decode("utf-8", "replace").strip() or "(empty body)"
+        sys.exit(
+            "error: {} did not return JSON (Content-Type: {}, {} bytes).\n"
+            "  Make sure LITELLM_BASE_URL points at the LiteLLM *proxy API* base\n"
+            "  (the URL whose '/model/info' returns JSON), not a UI/SSO page, and\n"
+            "  that LITELLM_API_KEY is a valid key for it. First bytes received:\n\n"
+            "  {}".format(url, ctype or "unknown", len(body), snippet.replace("\n", "\n  "))
+        )
 
     out = {}
     for m in payload.get("data", []):
