@@ -8,3 +8,6 @@ __pycache__/
 # Browser/screenshot artifacts (Playwright MCP, local captures)
 .playwright-mcp/
 *.png
+
+# Generated pricing overrides (gateway-specific; auto-loaded if present)
+pricing.json

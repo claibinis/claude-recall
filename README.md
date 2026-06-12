@@ -483,13 +483,19 @@ export LITELLM_BASE_URL=https://your-litellm-gateway.example.com
 export LITELLM_API_KEY=sk-...            # a key valid for that gateway (or your login token)
 # export LITELLM_INSECURE=1              # only for internal gateways with a private CA
 
-./scripts/gen-pricing > ~/.claude/pricing.json
-
-# tell claude-recall to use it (add to your shell profile to persist):
-export CLAUDE_RECALL_PRICING_FILE=~/.claude/pricing.json
+./scripts/gen-pricing                    # writes pricing.json next to claude-recall
 ```
 
-With `CLAUDE_RECALL_PRICING_FILE` set, the generated rates override the built-in defaults; unset, the defaults are used unchanged. Model lookup is longest-match, so a specific entry like `claude-opus-4-8` wins over a generic `claude-opus-4`. The file is plain JSON — you can also write or edit it by hand. Rates are USD per 1M tokens; the values below are example rates — replace them with your own:
+By default it writes `pricing.json` **next to the `claude-recall` script**, which the tool **auto-loads** — no environment variable to set. (It also checks `~/.claude/pricing.json`.) `pricing.json` is git-ignored, since rates are gateway-specific.
+
+If you have a negotiated discount, bake it in with `--discount`:
+
+```bash
+./scripts/gen-pricing --discount 25      # 25% off the gateway's published rates
+./scripts/gen-pricing --out -            # print to stdout instead of writing the file
+```
+
+Prefer an explicit path? `CLAUDE_RECALL_PRICING_FILE=/path/to/pricing.json` still overrides auto-discovery (and `gen-pricing --out <path>` writes there). Model lookup is longest-match, so a specific entry like `claude-opus-4-8` wins over a generic `claude-opus-4`. The file is plain JSON — you can also write or edit it by hand (keys starting with `_`, like the `_meta` provenance block, are ignored). Rates are USD per 1M tokens; the values below are example rates — replace them with your own:
 
 ```json
 {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.0
+
+- **Pricing file is now auto-discovered** — no env var required. claude-recall
+  loads `pricing.json` from next to the script (or `~/.claude/pricing.json`) if
+  present; `CLAUDE_RECALL_PRICING_FILE` still overrides. `scripts/gen-pricing`
+  writes there by default (`--out` to change, `--out -` for stdout). The file is
+  git-ignored, and `_`-prefixed keys (e.g. `_meta` provenance) are ignored on load.
+- **`gen-pricing --discount PCT`** — bake a negotiated discount into the generated
+  rates (e.g. `--discount 25` for 25% off the gateway's published prices). Token
+  limits (`max_input`/`max_output`) are not discounted.
+
 ## 2.2.0
 
 - **Multi-line listing by default** — each session row now shows up to two

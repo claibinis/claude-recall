@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
@@ -57,30 +57,49 @@ CONTEXT_LIMITS = {
 CONTEXT_WARN_RATIO = float(os.environ.get("CLAUDE_RECALL_CTX_WARN", "0.9"))
 
 
-def _load_pricing_overrides():
-    """Merge per-model rates from CLAUDE_RECALL_PRICING_FILE over the defaults.
+def _pricing_file():
+    """Locate the pricing-overrides file. Resolution order:
 
-    The file is JSON keyed by model name, with rates in USD per 1M tokens
-    (example rates below — replace with your own), e.g.
+    1. ``CLAUDE_RECALL_PRICING_FILE`` if set (explicit override).
+    2. ``pricing.json`` next to this script (where the command lives).
+    3. ``pricing.json`` in ``CLAUDE_DIR`` (~/.claude).
+
+    Returns a Path (env case: even if missing, so a bad path warns), or None.
+    """
+    env = os.environ.get("CLAUDE_RECALL_PRICING_FILE")
+    if env:
+        return Path(env).expanduser()
+    for cand in (Path(os.path.realpath(__file__)).parent / "pricing.json",
+                 CLAUDE_DIR / "pricing.json"):
+        if cand.exists():
+            return cand
+    return None
+
+
+def _load_pricing_overrides():
+    """Merge per-model rates from a pricing file over the built-in defaults.
+
+    The file is JSON keyed by model name, with rates in USD per 1M tokens, e.g.
 
         {"your-model-name": {"input": 3.00, "output": 15.00,
                              "cache_write": 3.75, "cache_read": 0.30,
                              "max_input": 200000}}
 
-    Generate it for any LiteLLM gateway with scripts/gen-pricing. When the env
-    var is unset, the built-in defaults above are used unchanged.
+    Generate it for any LiteLLM gateway with scripts/gen-pricing (which writes
+    pricing.json next to this script by default, so it's picked up with no env
+    var). Keys starting with "_" (e.g. "_meta") are ignored. With no file the
+    built-in defaults are used unchanged.
     """
-    path = os.environ.get("CLAUDE_RECALL_PRICING_FILE")
+    path = _pricing_file()
     if not path:
         return
     try:
-        data = json.loads(Path(path).expanduser().read_text())
+        data = json.loads(path.read_text())
     except (OSError, ValueError) as e:
-        print("warning: could not load CLAUDE_RECALL_PRICING_FILE "
-              "({}): {}".format(path, e), file=sys.stderr)
+        print("warning: could not load pricing file ({}): {}".format(path, e), file=sys.stderr)
         return
     for model, fields in data.items():
-        if not isinstance(fields, dict):
+        if model.startswith("_") or not isinstance(fields, dict):
             continue
         rate = {k: fields[k] for k in ("input", "output", "cache_write", "cache_read")
                 if isinstance(fields.get(k), (int, float))}
