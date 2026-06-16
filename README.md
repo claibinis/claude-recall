@@ -15,31 +15,23 @@ claude-recall is a complement to Claude Code, not a replacement — verified aga
 - **Naming** — Claude Code auto-titles sessions, and `SessionStart` hooks can set the title via `hookSpecificOutput.sessionTitle` (2.1.152). `claude-recall install-hooks` uses that exact mechanism to set a deterministic `folder@branch` title. Use whichever you prefer; they're the same supported API.
 - **Listing / resume** — Claude Code resumes by name or recency: `/resume <name>` (2.0.64), a picker that previews your most-recent prompt (2.1.0), and the agent view / `claude agents` live dashboard of running/blocked/done sessions (2.1.139+). What none of them do is **search by content** — claude-recall indexes the full **historical** transcript tree across every project and date and finds sessions by keyword (or full-text, `-f`), then hands you the `resume` command.
 - **Usage** — Claude Code's `/stats` shows gamified aggregate usage (favorite model, streak, 7d/30d/all date ranges) and `/usage` shows your *plan/limit* consumption by category. claude-recall reports **per-session** token totals, **dollar cost estimates using your own pricing** (built-in rates or a LiteLLM/discounted `pricing.json`), and cache efficiency — for any filtered subset.
-- **Cleanup** — Claude Code has no transcript pruning; `remove`/`clean`/`prune-empty`/`forget` remain unique to claude-recall.
+- **Cleanup** — Claude Code has no transcript pruning; `remove`/`clean` (with `--empty`)/`forget` remain unique to claude-recall.
 
 ## Installation
 
 ```bash
-# Clone it
 git clone https://github.com/claibinis/claude-recall.git
 cd claude-recall
-
-# Option A: symlink both tools to your PATH
-ln -s "$(pwd)/claude-recall" ~/bin/claude-recall
-ln -s "$(pwd)/cc" ~/bin/cc
-
-# Option B: copy them
-cp claude-recall cc ~/bin/
-
-# Option C: just run directly
-./claude-recall
+./claude-recall setup
 ```
 
-**Requirements:** Python 3.6+ (no external dependencies). The session wrapper ships in three flavors — pick the one for your shell: `cc` (zsh), `cc.bash` (bash), or `cc.ps1` (Windows PowerShell).
+That's it. `setup` puts `claude-recall` on your PATH, installs the Claude Code hooks (auto-names sessions `folder@branch`, prunes throwaway ones on exit), registers the [MCP server](#let-claude-recall-sessions-itself--mcp-server) so Claude can recall sessions mid-conversation, and offers to set up custom pricing. It's idempotent, and `./claude-recall setup --uninstall` reverses all of it.
+
+**Requirements:** Python 3.6+ (no external dependencies). Prefer to do nothing global? Just run `./claude-recall` from the clone — everything works without `setup`.
 
 ### Windows
 
-`claude-recall` is plain Python, so it runs on Windows too — invoke it as `python claude-recall ...`, or put this folder on your `PATH` and use the included `claude-recall.cmd` launcher to just type `claude-recall ...`. For the session wrapper, use `cc.ps1` (e.g. add `function cc { & "C:\path\to\cc.ps1" @args }` to your PowerShell `$PROFILE`).
+`claude-recall` is plain Python — invoke it as `python claude-recall ...`, or put this folder on your `PATH` and use the included `claude-recall.cmd` launcher to type `claude-recall ...` directly.
 
 ## Usage
 
@@ -64,18 +56,20 @@ Each row shows up to two prompts by default — the **opening** ask plus the **m
 
 ### Search by keyword(s)
 
+Just type your terms — bare words are a search:
+
 ```bash
-claude-recall -s "deployment"
-claude-recall -s "deploy retry timeout"     # all three words must appear (AND)
-claude-recall -s "auth login signup" --any  # any of the words (OR)
+claude-recall deployment
+claude-recall deploy retry timeout      # all three words must appear (AND)
+claude-recall auth login signup --any   # any of the words (OR)
 ```
 
-A multi-word query is **AND by default** — every term must appear (in the prompts, the session name, or the project). Use `--any` for OR. Searches show a `↳` snippet of the match under each result.
+A multi-word query is **AND by default** — every term must appear (in the prompts, the session name, or the project). Use `--any` for OR. Searches show a `↳` snippet of the match under each result. (The explicit forms `claude-recall search <terms>` and `-s "<terms>"` work identically.)
 
 Add `-f` for full-text search through transcript files (slower, but catches assistant responses and tool output too — and the snippet comes from the matching line):
 
 ```bash
-claude-recall -s "playwright tools" -f
+claude-recall playwright tools -f
 ```
 
 ### Read a session
@@ -181,7 +175,7 @@ Most sessions are unnamed, which is the whole reason they're hard to find. Give 
 
 ```bash
 claude-recall name d817ab64 "gpu capacity planning"
-claude-recall unname d817ab64
+claude-recall name d817ab64 --clear        # remove the label
 ```
 
 Named sessions show a `★` in the listing and are matched by search. The name survives even if you later delete the transcript.
@@ -222,11 +216,11 @@ claude-recall clean --older-than 60
 
 Cleanup **never** touches `history.jsonl` — your session index is preserved so keyword search still works. Only transcript files (the large JSONL conversation logs) are removed.
 
-To clear out throwaway sessions (a stray `/exit`, a one-line question) rather than old ones:
+To clear out throwaway sessions (a stray `/exit`, a one-line question) rather than old ones, add `--empty`:
 
 ```bash
-claude-recall prune-empty --dry-run
-claude-recall prune-empty
+claude-recall clean --empty --dry-run
+claude-recall clean --empty
 ```
 
 ### Recoverable vs. history-only sessions
@@ -349,88 +343,34 @@ With no command, `claude-recall` lists sessions using the flags above. The filte
 
 ### Commands
 
+Core (shown in `claude-recall -h`):
+
 | Command | Description | Command flags |
 |---------|-------------|---------------|
+| `setup` | One-command install: PATH + hooks + MCP (+ optional pricing) | `--uninstall`, `-y` |
+| `search TERMS` | Search sessions (same as bare `claude-recall TERMS`) | all filter/display/sort flags |
 | `show ID` | Print a session's conversation | `--grep TERMS` (only matching turns, highlighted), `--last N` (final N turns), `--no-summary` (skip compaction recaps), `--text-only` (prose-only turns) |
 | `resume ID` | Print the command to resume a session (with `cd`) | `--exec` (run it instead of printing) |
+| `name ID NAME` | Label a session (stored separately; transcript untouched) | `--clear` (remove the label) |
+| `clean` | Delete old transcripts | `--older-than N` (days, default 90), `--empty` (throwaway ≤1-prompt sessions instead), `--dry-run`, `-y/--yes` |
+
+Advanced (in `claude-recall --help-all`):
+
+| Command | Description | Command flags |
+|---------|-------------|---------------|
 | `stats` | Summary statistics (incl. cache efficiency); honors filters | — |
 | `export csv\|json` | Export sessions; honors filters/sort/display flags | — |
-| `name ID NAME` | Assign a name to a session | — |
-| `unname ID` | Remove a session's name | — |
 | `remove ID` | Remove a specific session transcript | `--dry-run`, `-y/--yes` |
-| `clean` | Bulk cleanup old transcripts | `--older-than N` (days, default 90), `--dry-run`, `-y/--yes` |
-| `prune-empty` | Remove throwaway sessions (≤1 prompt) | `--dry-run`, `-y/--yes` |
 | `forget` | Purge history-only sessions (transcript already deleted) from `history.jsonl` | `--dry-run`, `-y/--yes` |
-| `install-hooks` | Wire SessionStart/SessionEnd hooks into `settings.json` (config alternative to the `cc` wrapper) | `--uninstall`, `--dry-run` |
+| `install-hooks` | Wire SessionStart/SessionEnd hooks into `settings.json` (run for you by `setup`) | `--uninstall`, `--dry-run` |
+| `mcp` | Run as an MCP server (run/registered for you by `setup`) | — |
 
 Run `claude-recall COMMAND -h` for a command's own options. The deletion commands take
-`-y/--yes` to skip the confirmation prompt — handy in scripts and hooks (see below).
+`-y/--yes` to skip the confirmation prompt — handy in scripts and hooks.
 
-## `cc` — Session wrapper
+## What `setup` configures: hooks
 
-The `cc` command wraps `claude` with two quality-of-life prompts:
-
-1. **On start** — asks for a session name (colorized, skippable with Enter)
-2. **On exit** — asks whether to keep, discard, or bulk-clean old transcripts
-
-> Claude Code now auto-titles sessions on its own, so the start prompt is mostly useful when you want a *deliberate*, human-chosen name up front rather than an auto-generated one. If you don't, prefer the hooks below (or just let Claude Code title it).
-
-Three equivalent versions are included — symlink/alias whichever matches your shell to `cc`:
-
-| Shell | File |
-|-------|------|
-| zsh | `cc` |
-| bash | `cc.bash` |
-| Windows PowerShell | `cc.ps1` |
-
-All three honor the same `CC_SKIP_NAME` / `CC_SKIP_EXIT` / `CC_AUTO_CLEAN_DAYS` settings.
-
-```
-$ cc
-Session name (enter to skip): refactor auth flow
-→ refactor auth flow
-
-[... normal Claude Code session ...]
-
-Keep this session transcript? [Y/n/clean]: y
-Session kept.
-```
-
-### Options at exit
-
-| Input | Action |
-|-------|--------|
-| `y` or Enter | Keep the transcript (default) |
-| `n` | Delete the transcript for the session that just ended |
-| `clean` | Run `claude-recall clean` to bulk-remove old transcripts |
-
-### Configuration
-
-Set these in your `.zshrc` to change behavior:
-
-```bash
-export CC_SKIP_NAME=1          # Never prompt for session name
-export CC_SKIP_EXIT=1          # Never prompt on exit
-export CC_AUTO_CLEAN_DAYS=60   # Days threshold for 'clean' option (default: 90)
-```
-
-The wrapper is transparent — all arguments pass through to `claude`:
-
-```bash
-cc --model sonnet           # session name prompt, then launches with sonnet
-cc -n "already named"       # skips name prompt (already provided)
-cc -p "one-shot question"   # skips both prompts (print mode)
-```
-
-### Skip the wrapper entirely — use hooks (recommended)
-
-You don't need the `cc` wrapper at all. `claude-recall` can wire its two jobs straight into Claude Code's own [hooks](https://code.claude.com/docs/en/hooks) — one command sets it up:
-
-```bash
-claude-recall install-hooks
-```
-
-That adds two entries to `~/.claude/settings.json` (your existing hooks and other settings are preserved, and the file is backed up to `settings.json.bak` first):
+`setup` (or `install-hooks` on its own) wires two entries into `~/.claude/settings.json` — existing settings are preserved and the file is backed up to `settings.json.bak` first:
 
 - **`SessionStart`** → auto-names each session `folder@branch` (via `sessionTitle`, the same mechanism as `/rename`)
 - **`SessionEnd`** → prunes the just-ended session if it's throwaway (≤1 prompt)
@@ -440,9 +380,32 @@ claude-recall install-hooks --dry-run     # preview the settings.json change
 claude-recall install-hooks --uninstall   # remove them again
 ```
 
-**The trade-off vs. the wrapper:** hooks are non-interactive (they run without a TTY — no `/dev/tty`), so you can't be *prompted* to type a descriptive name or to confirm keep/discard. Instead naming is automatic (folder + branch) — refine any session with `/rename` mid-session or `claude-recall name <id> "..."` after — and cleanup is an automatic policy rather than a per-session question. For most people that's less friction, no wrapper, and identical behavior on macOS/Linux/Windows.
+Naming is automatic (folder + branch); refine any session with `/rename` mid-session or `claude-recall name <id> "..."` after. Prefer a different cleanup policy? The `SessionEnd` hook is just a command — swap the installed one for `claude-recall clean --older-than 60 -y` to age out old transcripts instead (the `-y` lets it run unattended).
 
-Prefer a different cleanup policy? The `SessionEnd` hook is just a command — swap the installed one for `claude-recall clean --older-than 60 -y` to age out old transcripts instead (the `-y` lets it run unattended).
+---
+
+## Let Claude recall sessions itself — MCP server
+
+Everything above is *you* searching your history. `claude-recall mcp` flips it around: it runs as an [MCP](https://modelcontextprotocol.io) server so **Claude Code calls your history itself, mid-conversation** — when you ask "why did we pick X?", Claude searches your past sessions and quotes your earlier decision back, without you running anything.
+
+Register it once:
+
+```bash
+claude mcp add claude-recall -- claude-recall mcp
+```
+
+That exposes four tools backed by your existing index:
+
+| Tool | What Claude uses it for |
+|------|-------------------------|
+| `search_sessions` | Keyword (or full-text) search across past sessions |
+| `read_session` | The **verbatim** conversation of one session (not a summary) |
+| `recent_sessions` | What you were working on lately |
+| `session_cost` | Token + estimated-$ totals (your built-in / LiteLLM pricing) |
+
+It speaks the protocol directly over stdin/stdout, so there's **still nothing to `pip install`** — same single Python file. The index is rebuilt (from cache) per call so recall stays current, and the server returns tool errors in-band rather than crashing. Everything stays local; nothing is sent anywhere.
+
+> This is the agent-memory complement to the CLI: the CLI is for *you* (cost, cleanup, reading), the MCP server is for *Claude* (recall during a session).
 
 ---
 
@@ -516,7 +479,7 @@ Prefer an explicit path? `CLAUDE_RECALL_PRICING_FILE=/path/to/pricing.json` stil
 
 ## Tips
 
-- **Use `cc` instead of `claude`** to get automatic name prompts, or name manually with `claude -n "my session"` — named sessions are easier to find with both `/resume` and `claude-recall`.
+- **Run `claude-recall setup` once** so sessions auto-name themselves (`folder@branch`) and Claude can recall them mid-conversation — named sessions are easier to find with both `/resume` and `claude-recall`. Refine any name with `/rename` or `claude-recall name <id> "..."`.
 - **Jump back into any session** with `claude-recall resume <prefix>` — it hands you the `cd` + `claude --resume` command, so you don't have to remember which directory the session belonged to.
 - **Transcripts get pruned** over time. If a session shows `-` (history only), the full transcript was cleaned up. The message index in history.jsonl persists.
 - **Full-text search** (`-f`) is slower because it reads every transcript file on disk. Use keyword search first, add `-f` if you need to search assistant responses.

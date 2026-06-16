@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
 
-__version__ = "2.3.2"
+__version__ = "3.0.0"
 
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
@@ -1450,6 +1450,325 @@ def cmd_install_hooks(uninstall=False, dry_run=False):
     print("  Restart Claude Code (or start a new session) for it to take effect.")
 
 
+def cmd_setup(uninstall=False, assume_yes=False):
+    """One command to install and wire up everything: put claude-recall on PATH,
+    install the Claude Code hooks (auto-naming + exit-pruning), register the MCP
+    server, and optionally set up custom pricing. Idempotent and reversible."""
+    script = os.path.realpath(__file__)
+    bindir = Path.home() / ".local" / "bin"
+    link = bindir / "claude-recall"
+
+    def claude_on_path():
+        return shutil.which("claude") is not None
+
+    if uninstall:
+        print("Removing claude-recall integrations…\n")
+        if claude_on_path():
+            subprocess.call(["claude", "mcp", "remove", "claude-recall"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print("  ✓ unregistered MCP server")
+        cmd_install_hooks(uninstall=True)
+        try:
+            if link.is_symlink() and os.path.realpath(link) == script:
+                link.unlink()
+                print(f"  ✓ removed {link}")
+        except OSError:
+            pass
+        print("\nDone. (Your clone is untouched — delete it to remove completely.)")
+        return
+
+    print("Setting up claude-recall…\n")
+
+    # 1. PATH — symlink into ~/.local/bin so `claude-recall` works anywhere.
+    found = shutil.which("claude-recall")
+    if found and os.path.realpath(found) == script:
+        print("  ✓ already on your PATH")
+    else:
+        try:
+            bindir.mkdir(parents=True, exist_ok=True)
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            link.symlink_to(script)
+            print(f"  ✓ linked into {link}")
+            if str(bindir) not in os.environ.get("PATH", "").split(os.pathsep):
+                print(f"    ↳ add {bindir} to your PATH (e.g. in ~/.zshrc) to use it everywhere")
+        except OSError as e:
+            print(f"  ! couldn't link into {bindir}: {e}")
+            print(f"    run it directly instead: {script}")
+
+    # 2. Hooks — auto-name sessions, prune throwaway ones on exit.
+    print()
+    cmd_install_hooks()
+
+    # 3. MCP server — let Claude recall past sessions mid-conversation.
+    print()
+    if claude_on_path():
+        rc = subprocess.call(["claude", "mcp", "add", "claude-recall", "--", script, "mcp"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if rc == 0:
+            print("  ✓ registered MCP server — Claude can now recall your sessions")
+        else:
+            print("  • MCP server already registered (or declined) — left as-is")
+    else:
+        print("  • 'claude' CLI not found — skipped MCP registration")
+        print(f"    later:  claude mcp add claude-recall -- {script} mcp")
+
+    # 4. Pricing (optional) — only if the user wants custom/gateway rates.
+    print()
+    if confirm("  Set up custom token pricing now (LiteLLM gateway)? [y/N] ", assume_yes):
+        gp = os.path.join(os.path.dirname(script), "scripts", "gen-pricing")
+        if os.path.exists(gp) and os.environ.get("LITELLM_BASE_URL"):
+            subprocess.call([sys.executable, gp])
+        else:
+            print("    Set LITELLM_BASE_URL / LITELLM_API_KEY, then run: scripts/gen-pricing")
+            print("    (or drop a pricing.json next to claude-recall). Using built-in rates for now.")
+    else:
+        print("  • Using built-in pricing (run scripts/gen-pricing anytime to customize)")
+
+    print("\nAll set. Try:")
+    print("  claude-recall            list recent sessions")
+    print("  claude-recall deploy     search for 'deploy'")
+
+
+# ─── MCP server (stdio, newline-delimited JSON-RPC 2.0; zero dependencies) ────
+#
+# Exposes the existing index as MCP tools so Claude Code can recall past
+# sessions *mid-conversation* (search, read verbatim, list recent, cost) by
+# calling tools itself — the "memory" capability comparable tools provide,
+# built on claude-recall's own search/cost engine. The protocol is spoken
+# directly over stdin/stdout, so there's still nothing to `pip install`.
+# Register it (one time) with:
+#
+#     claude mcp add claude-recall -- claude-recall mcp
+#
+MCP_PROTOCOL_VERSION = "2024-11-05"
+
+
+def _mcp_tools():
+    """Tool definitions advertised to the MCP client (Claude Code)."""
+    proj_prop = {"type": "string", "description": "Limit to a project (directory-name substring)."}
+    limit_prop = {"type": "integer", "description": "Max results (default 10)."}
+    return [
+        {
+            "name": "search_sessions",
+            "description": (
+                "Search the user's past Claude Code sessions by keyword to recall "
+                "earlier decisions, context, and conversations. Returns matching "
+                "sessions with date, project, a matching snippet, and a resume "
+                "command. Call this whenever the user refers to something discussed "
+                "or decided in a previous session."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Keywords; space-separated terms must all match unless 'any' is true."},
+                    "full_text": {"type": "boolean", "description": "Also scan full transcript bodies, not just prompts/names (slower). Default false."},
+                    "any": {"type": "boolean", "description": "Match ANY term (OR) instead of ALL (AND). Default false."},
+                    "project": proj_prop,
+                    "limit": limit_prop,
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "read_session",
+            "description": (
+                "Return the conversation transcript of one past session by ID (or a "
+                "unique ID prefix from search_sessions), so you can quote the user's "
+                "exact earlier words rather than a paraphrase. Optionally restrict to "
+                "the last N turns or to turns matching search terms."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Session ID or unique prefix."},
+                    "last": {"type": "integer", "description": "Only the final N turns."},
+                    "grep": {"type": "string", "description": "Only turns containing these terms."},
+                },
+                "required": ["id"],
+            },
+        },
+        {
+            "name": "recent_sessions",
+            "description": (
+                "List the most recently active past sessions (optionally for one "
+                "project) to recall what was being worked on lately."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"project": proj_prop, "limit": limit_prop},
+            },
+        },
+        {
+            "name": "session_cost",
+            "description": (
+                "Report token usage and estimated USD cost across past sessions "
+                "(optionally for one project), using claude-recall's pricing "
+                "(built-in rates or a configured LiteLLM/discounted pricing file)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"project": proj_prop},
+            },
+        },
+    ]
+
+
+def _mcp_brief(session, transcripts, snippet=""):
+    """One compact, LLM-readable block describing a session."""
+    sid = session["id"]
+    proj = project_short_name(session.get("project") or session.get("cwd"))
+    head = "[{}] {} · {}".format(sid[:8], format_timestamp(session.get("last_ts")), proj)
+    branch = session.get("git_branch", "")
+    if branch and branch not in ("main", "master", "HEAD"):
+        head += "@" + branch
+    if session.get("name"):
+        head += " · ★ " + session["name"]
+    lines = [head]
+    if snippet:
+        lines.append("  ↳ " + snippet)
+    else:
+        for p in session_prompts(session, limit=2):
+            lines.append("  • " + p[:200])
+    lines.append("  resume: " + resume_command(session))
+    return "\n".join(lines)
+
+
+def _mcp_project_match(session, needle):
+    """True if a session's project name contains `needle` (already lowercased)."""
+    return needle in project_short_name(session.get("project") or session.get("cwd")).lower()
+
+
+def _mcp_call_tool(name, arguments):
+    """Run one MCP tool and return its text payload. ValueError → tool error."""
+    args = arguments or {}
+    sessions, transcripts = build_index()  # cheap (cache); keeps recall fresh
+    recallable = [s for s in sessions.values() if s.get("has_transcript")]
+
+    project = (args.get("project") or "").strip().lower()
+    if project:
+        recallable = [s for s in recallable if _mcp_project_match(s, project)]
+
+    if name == "search_sessions":
+        query = (args.get("query") or "").strip()
+        if not query:
+            raise ValueError("query is required")
+        terms = parse_terms(query)
+        any_mode = bool(args.get("any"))
+        limit = max(1, int(args.get("limit") or 10))
+        snippets = {}
+
+        if args.get("full_text"):
+            subset = {s["id"]: transcripts[s["id"]] for s in recallable if s["id"] in transcripts}
+            snippets = search_transcripts(terms, subset, any_mode)
+            hits = [s for s in recallable if s["id"] in snippets]
+        else:
+            hits = []
+            for s in recallable:
+                hay = " ".join(s.get("messages", []) + [
+                    s.get("name", ""), s.get("first_assistant", ""),
+                    project_short_name(s.get("project") or s.get("cwd")),
+                ])
+                if terms_match(hay, terms, any_mode):
+                    hits.append(s)
+                    snip = first_snippet(s.get("messages", []), terms)
+                    if snip:
+                        snippets[s["id"]] = snip
+
+        hits.sort(key=lambda x: x.get("last_ts", 0), reverse=True)
+        hits = hits[:limit]
+        if not hits:
+            return "No matching sessions found for: " + query
+        blocks = [_mcp_brief(s, transcripts, snippets.get(s["id"], "")) for s in hits]
+        return "{} session(s) matching '{}':\n\n{}".format(len(hits), query, "\n\n".join(blocks))
+
+    if name == "read_session":
+        prefix = (args.get("id") or "").strip()
+        if not prefix:
+            raise ValueError("id is required")
+        match = resolve_session_id(prefix, sessions, transcripts)
+        if match is None:
+            return "No session matches id prefix: " + prefix
+        if isinstance(match, list):
+            return "Ambiguous id prefix '{}' — matches {} sessions: {}".format(
+                prefix, len(match), ", ".join(m[:8] for m in match[:10]))
+        # Reuse cmd_show's renderer by capturing its stdout (no new dependency).
+        saved, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            cmd_show(match, sessions, transcripts, grep=args.get("grep"),
+                     last=int(args.get("last") or 0))
+            text = sys.stdout.getvalue()
+        finally:
+            sys.stdout = saved
+        return text.strip() or "(empty session)"
+
+    if name == "recent_sessions":
+        limit = max(1, int(args.get("limit") or 10))
+        recallable.sort(key=lambda x: x.get("last_ts", 0), reverse=True)
+        recallable = recallable[:limit]
+        if not recallable:
+            return "No sessions found."
+        return "\n\n".join(_mcp_brief(s, transcripts) for s in recallable)
+
+    if name == "session_cost":
+        total = sum(estimate_cost(s, s.get("model")) for s in recallable)
+        toks = sum(s["input_tokens"] + s["output_tokens"] for s in recallable)
+        scope = " for project '{}'".format(project) if project else ""
+        return ("{} session(s){}\n"
+                "  total tokens (in+out): {}\n"
+                "  estimated cost: ${:,.2f}").format(len(recallable), scope, format_tokens(toks), total)
+
+    raise ValueError("unknown tool: " + str(name))
+
+
+def cmd_mcp_serve():
+    """Serve the MCP tools over stdio. Reads newline-delimited JSON-RPC 2.0
+    requests on stdin, writes responses on stdout. Never crashes on a single bad
+    request — malformed lines are ignored and tool errors are returned in-band."""
+    out = sys.stdout  # captured up front; read_session swaps sys.stdout briefly
+
+    def send(obj):
+        out.write(json.dumps(obj) + "\n")
+        out.flush()
+
+    def reply(rid, payload):
+        send({"jsonrpc": "2.0", "id": rid, "result": payload})
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except ValueError:
+            continue  # ignore malformed input
+        rid = req.get("id")
+        method = req.get("method")
+        params = req.get("params") or {}
+
+        if method == "initialize":
+            reply(rid, {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "claude-recall", "version": __version__},
+            })
+        elif method == "tools/list":
+            reply(rid, {"tools": _mcp_tools()})
+        elif method == "tools/call":
+            try:
+                text = _mcp_call_tool(params.get("name"), params.get("arguments"))
+                reply(rid, {"content": [{"type": "text", "text": text}], "isError": False})
+            except ValueError as e:
+                reply(rid, {"content": [{"type": "text", "text": "error: " + str(e)}], "isError": True})
+            except Exception as e:  # one bad call must not kill the server
+                reply(rid, {"content": [{"type": "text", "text": "internal error: " + str(e)}], "isError": True})
+        elif method == "ping":
+            reply(rid, {})
+        elif rid is not None:
+            # A request (has id) we don't implement; notifications (no id) are ignored.
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "method not found: " + str(method)}})
+
+
 def cmd_stats(session_list, transcripts, scope=""):
     """Show summary statistics over a (possibly filtered) list of sessions.
 
@@ -1597,35 +1916,25 @@ def filters_scope(args):
 
 
 SHORT_HELP = """\
-claude-recall {ver} — search, analyze, and manage Claude Code sessions
+claude-recall {ver} — search & manage your Claude Code sessions
 
-Usage: claude-recall [filter/sort options]   List & search sessions (default)
-       claude-recall COMMAND [args]          Run a command
+Setup (once)
+  claude-recall setup            Put on PATH + install hooks + register MCP server
 
-Listing (the default — no command)
-  (no args)             List recent sessions
-  -s, --search TERMS    Search; space-separated terms are AND ( --any = OR )
-  -f, --full-text       Also search inside transcripts (slower; shows snippets)
-  --tokens  --context  --size  --detail              Enrich the listing
-  --lines N   prompts shown per session (default 2: opening + most recent)
-  --sort date|recent|cost|size|tokens|messages   -n N   --reverse
+Everyday
+  claude-recall                  List recent sessions
+  claude-recall TERMS            Search  (e.g. claude-recall deploy retry)
+  claude-recall show ID          Read a conversation
+  claude-recall resume ID        Show the resume command  ( --exec to run it )
+  claude-recall name ID "label"  Label a session          ( --clear to remove )
+  claude-recall clean            Delete old transcripts    ( --empty for throwaway )
 
-Filter   --project NAME   --branch NAME   --since/--until 7d|24h|2w|DATE   --date
-         --all   include deleted, history-only sessions (hidden by default)
+Flags for the list/search
+  --tokens  --size  --context    Show cost / disk / context inline
+  --since 7d   --project NAME   --sort cost|size|recent   -n N
 
-Commands  (deletions take -y to skip the prompt, --dry-run to preview)
-  show ID [--last N --grep T --no-summary --text-only]   Read a conversation
-  resume ID [--exec]            Print the resume command ( --exec runs it )
-  stats                         Token/cost summary (honors filters)
-  export csv|json               Dump sessions (honors filters/sort)
-  name ID NAME  /  unname ID    Assign / clear a label
-  remove ID                     Delete one session's transcript
-  clean [--older-than N]        Bulk cleanup of old transcripts
-  prune-empty                   Drop throwaway (≤1-prompt) sessions
-  forget                        Purge deleted-transcript sessions from history.jsonl
-
-  claude-recall COMMAND -h    help for a specific command
-  claude-recall --help-all    full option list
+  claude-recall --help-all       Everything (stats, export, forget, mcp, …)
+  claude-recall COMMAND -h       Help for one command
   https://github.com/claibinis/claude-recall
 """
 
@@ -1672,36 +1981,47 @@ def build_parser():
         default="date", help="Sort order (default: date; 'recent' = last activity)",
     )
 
+    # Listing-view options shared by the default path and the `search` command.
+    view = argparse.ArgumentParser(add_help=False)
+    vg = view.add_argument_group("listing view")
+    vg.add_argument(
+        "--lines", type=int, default=_env_int("CLAUDE_RECALL_LINES", 2), metavar="N",
+        help="Prompt lines per session — opening + most recent (default: 2; "
+             "set CLAUDE_RECALL_LINES to change the default)",
+    )
+    vg.add_argument("-v", "--verbose", action="store_true", help="Show more prompt lines per session")
+    vg.add_argument("--detail", action="store_true", help="Expanded per-session breakdown instead of inline")
+
     # ── Top-level parser (no command → listing) ──
     parser = argparse.ArgumentParser(
         prog="claude-recall",
-        description="Search, analyze, and manage Claude Code sessions",
+        description="Search and manage your Claude Code sessions",
         add_help=False,  # custom -h (concise) + --help-all (full) below
-        parents=[filters, display, ordering],
+        parents=[filters, display, ordering, view],
         epilog="Examples:\n"
-        "  claude-recall                          List all sessions\n"
-        "  claude-recall -s 'deploy' --tokens     Search with cost info\n"
-        "  claude-recall --size --sort size -n 10 Top 10 by disk usage\n"
-        "  claude-recall -s 'deploy retry' -f     AND search (all words) in transcripts\n"
-        "  claude-recall --since 7d --branch fix  Last week, on branches matching 'fix'\n"
-        "  claude-recall show cf21fedb            Read a session's conversation\n"
-        "  claude-recall resume cf21fedb --exec   Jump straight back into a session\n"
-        "  claude-recall name cf21 'gpu plan'     Name a session for later\n"
-        "  claude-recall clean --older-than 60    Bulk cleanup\n",
+        "  claude-recall setup                    One-time install (PATH + hooks + MCP)\n"
+        "  claude-recall                          List recent sessions\n"
+        "  claude-recall deploy retry             Search (bare words = search)\n"
+        "  claude-recall --since 7d --tokens      Last week, with cost\n"
+        "  claude-recall show cf21fedb            Read a conversation\n"
+        "  claude-recall resume cf21fedb --exec   Jump back into a session\n"
+        "  claude-recall name cf21 'gpu plan'     Label a session ( --clear to remove )\n"
+        "  claude-recall clean --older-than 60    Delete old transcripts\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("-h", "--help", action="store_true", help="Show concise help")
     parser.add_argument("--help-all", action="store_true", help="Show the full option list")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument(
-        "--lines", type=int, default=_env_int("CLAUDE_RECALL_LINES", 2), metavar="N",
-        help="Prompt lines per session in the listing — opening + most recent (default: 2; "
-             "set CLAUDE_RECALL_LINES to change the default)",
-    )
-    parser.add_argument("-v", "--verbose", action="store_true", help="Show even more prompt lines per session")
-    parser.add_argument("--detail", action="store_true", help="Expanded per-session breakdown instead of inline")
 
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    p_setup = sub.add_parser("setup", help="One-command install: PATH + hooks + MCP (+ optional pricing)")
+    p_setup.add_argument("--uninstall", action="store_true", help="Remove the integrations instead")
+    p_setup.add_argument("-y", "--yes", action="store_true", help="Accept defaults without prompting")
+
+    p_search = sub.add_parser("search", parents=[filters, display, ordering, view],
+                              help="Search sessions by keyword(s) — same as bare `claude-recall TERMS`")
+    p_search.add_argument("query", nargs="+", metavar="TERMS", help="Keywords (AND by default; --any for OR)")
 
     p_show = sub.add_parser("show", help="Print a session's conversation by ID prefix")
     p_show.add_argument("id", metavar="ID", help="Session ID prefix")
@@ -1719,26 +2039,21 @@ def build_parser():
     p_export = sub.add_parser("export", parents=[filters, display, ordering], help="Export sessions (honors filters/sort)")
     p_export.add_argument("format", choices=["csv", "json"], help="Export format")
 
-    p_name = sub.add_parser("name", help="Assign a name to a session (stored separately; transcript untouched)")
+    p_name = sub.add_parser("name", help="Label a session ( --clear to remove the label )")
     p_name.add_argument("id", metavar="ID", help="Session ID prefix")
-    p_name.add_argument("name", metavar="NAME", help="Name to assign")
-
-    p_unname = sub.add_parser("unname", help="Remove a session's assigned name")
-    p_unname.add_argument("id", metavar="ID", help="Session ID prefix")
+    p_name.add_argument("name", metavar="NAME", nargs="?", help="Label to assign (omit with --clear to remove)")
+    p_name.add_argument("--clear", action="store_true", help="Remove the session's label")
 
     p_remove = sub.add_parser("remove", help="Remove a specific session transcript by ID prefix")
     p_remove.add_argument("id", metavar="ID", help="Session ID prefix")
     p_remove.add_argument("--dry-run", action="store_true", help="Preview without deleting")
     p_remove.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
 
-    p_clean = sub.add_parser("clean", help="Bulk cleanup old transcripts")
-    p_clean.add_argument("--older-than", type=int, default=90, help="Days threshold (default: 90)")
+    p_clean = sub.add_parser("clean", help="Delete old transcripts ( --empty for throwaway ≤1-prompt ones )")
+    p_clean.add_argument("--older-than", type=int, default=90, metavar="DAYS", help="Age threshold in days (default: 90)")
+    p_clean.add_argument("--empty", action="store_true", help="Target throwaway (≤1-prompt) sessions instead of old ones")
     p_clean.add_argument("--dry-run", action="store_true", help="Preview without deleting")
     p_clean.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
-
-    p_prune = sub.add_parser("prune-empty", help="Remove throwaway sessions (≤1 prompt)")
-    p_prune.add_argument("--dry-run", action="store_true", help="Preview without deleting")
-    p_prune.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
 
     p_forget = sub.add_parser(
         "forget",
@@ -1757,12 +2072,38 @@ def build_parser():
     p_hook = sub.add_parser("hook", help="(internal) handle a Claude Code hook event from stdin")
     p_hook.add_argument("event", choices=["session-start", "session-end"])
 
+    sub.add_parser(
+        "mcp",
+        help="Run as an MCP server (stdio) so Claude Code can recall past sessions mid-conversation",
+    )
+
     return parser
 
 
+# Subcommand names — used to tell a command apart from bare-word search terms.
+_COMMANDS = frozenset({
+    "setup", "search", "show", "resume", "stats", "export", "name", "remove",
+    "clean", "forget", "install-hooks", "hook", "mcp",
+})
+
+
+# Commands merged away in 3.0 — point users at the new form instead of silently
+# treating the old name as a search term.
+_RETIRED = {"unname": "name <ID> --clear", "prune-empty": "clean --empty"}
+
+
 def main():
+    argv = sys.argv[1:]
+    if argv and argv[0] in _RETIRED:
+        sys.exit("`{0}` was merged in 3.0 — use:  claude-recall {1}".format(argv[0], _RETIRED[argv[0]]))
+
+    # Bare words are a search: `claude-recall deploy retry` ⇒ `search deploy retry`.
+    # Only triggers when the first arg is a plain word that isn't a known command.
+    if argv and not argv[0].startswith("-") and argv[0] not in _COMMANDS:
+        argv = ["search"] + argv
+
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.help_all:
         parser.print_help()
@@ -1771,8 +2112,11 @@ def main():
         print_short_help()
         return
 
-    # Hooks and the installer run before (and without) the index — hooks must be
-    # fast, and the installer only edits settings.json.
+    # These run before (and without) the index: setup/installer only edit config,
+    # hooks must be fast, and the MCP server owns its own index lifecycle.
+    if args.command == "setup":
+        cmd_setup(uninstall=args.uninstall, assume_yes=args.yes)
+        return
     if args.command == "hook":
         if args.event == "session-start":
             cmd_hook_session_start()
@@ -1781,6 +2125,9 @@ def main():
         return
     if args.command == "install-hooks":
         cmd_install_hooks(uninstall=args.uninstall, dry_run=args.dry_run)
+        return
+    if args.command == "mcp":
+        cmd_mcp_serve()
         return
 
     sessions, transcripts = build_index()
@@ -1793,12 +2140,16 @@ def main():
     # ── Action commands (subcommands, exclusive) ──
     cmd = args.command
 
-    if cmd == "name":
-        cmd_set_name(args.id, args.name, sessions, transcripts)
-        return
+    # `search` is sugar for the default listing path with a query set.
+    if cmd == "search":
+        args.search = " ".join(args.query)
+        cmd = None
 
-    if cmd == "unname":
-        cmd_unname(args.id, sessions, transcripts)
+    if cmd == "name":
+        if args.clear or not args.name:
+            cmd_unname(args.id, sessions, transcripts)
+        else:
+            cmd_set_name(args.id, args.name, sessions, transcripts)
         return
 
     if cmd == "show":
@@ -1815,11 +2166,10 @@ def main():
         return
 
     if cmd == "clean":
-        cmd_clean(sessions, transcripts, args.older_than, args.dry_run, args.yes)
-        return
-
-    if cmd == "prune-empty":
-        cmd_prune_empty(sessions, transcripts, args.dry_run, args.yes)
+        if args.empty:
+            cmd_prune_empty(sessions, transcripts, args.dry_run, args.yes)
+        else:
+            cmd_clean(sessions, transcripts, args.older_than, args.dry_run, args.yes)
         return
 
     if cmd == "forget":

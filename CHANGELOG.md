@@ -1,5 +1,49 @@
 # Changelog
 
+## 3.0.0
+
+**Simpler to install, configure, and use.** The everyday surface is now ~7 commands;
+everything else moved under `--help-all`.
+
+### Added
+- **`claude-recall setup`** — one command installs everything: symlinks onto your
+  PATH, installs the Claude Code hooks, registers the MCP server, and offers to set
+  up custom pricing. Idempotent; `setup --uninstall` reverses it. This is the new
+  recommended install path.
+- **Bare-word search** — `claude-recall deploy retry` now searches (no `-s` needed).
+  Equivalent explicit form: `claude-recall search deploy retry`. `-s/--search` still
+  works.
+
+### Changed (breaking)
+- **`unname ID` → `name ID --clear`** (the `name` command now also clears labels).
+- **`prune-empty` → `clean --empty`** (clean gains an `--empty` flag for throwaway
+  ≤1-prompt sessions; default `clean` is still age-based).
+- **Concise `-h` lists only the core commands** (setup, search, show, resume, name,
+  clean). `stats`, `export`, `remove`, `forget`, `install-hooks`, and `mcp` are still
+  there — see `--help-all`.
+- **Removed the `cc` shell wrappers** (`cc`, `cc.bash`, `cc.ps1`). The hooks installed
+  by `setup`/`install-hooks` do the same auto-naming + exit-pruning, identically on
+  every OS, with nothing to keep in sync. The `CC_*` environment variables are gone.
+
+No change to indexing, search quality, cost/context analysis, or output formatting.
+
+## 2.4.0
+
+- **`claude-recall mcp` — MCP server (stdio).** claude-recall can now run as a
+  [Model Context Protocol](https://modelcontextprotocol.io) server so Claude Code
+  can recall your past sessions *mid-conversation*, calling tools itself instead of
+  you running a search. Four tools over your existing index:
+  - `search_sessions` — keyword (or `full_text`) search, returns date/project/snippet/resume
+  - `read_session` — the verbatim conversation of one session (optionally `last N` / `grep`)
+  - `recent_sessions` — what you were working on lately
+  - `session_cost` — token + estimated-$ totals (uses your built-in or LiteLLM pricing)
+
+  Register once: `claude mcp add claude-recall -- claude-recall mcp`. The protocol
+  is spoken directly over stdin/stdout — **still zero dependencies**, nothing to
+  `pip install`. The server rebuilds the (cached) index per call so recall stays
+  fresh, and never crashes on a bad request: malformed input is ignored and tool
+  errors are returned in-band.
+
 ## 2.3.2
 
 - **Docs: positioning vs. native Claude Code.** Reviewed the Claude Code changelog
