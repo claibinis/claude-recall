@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.1
+
+- Housekeeping: bump `__version__` to 3.0.1 and git-ignore a personal
+  `slack-announcement.md` draft. No functional changes.
+
 ## 3.0.0
 
 **Simpler to install, configure, and use.** The everyday surface is now ~7 commands;
