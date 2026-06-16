@@ -1,0 +1,1975 @@
+#!/usr/bin/env python3
+"""claude-recall — Search, analyze, and manage your Claude Code sessions.
+
+A standalone tool that indexes ~/.claude session data, providing keyword search,
+token usage reporting, cost estimation, and cleanup utilities.
+
+Requires: Python 3.6+ (no external dependencies)
+"""
+
+import argparse
+import csv
+import io
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import textwrap
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from collections import defaultdict
+
+__version__ = "2.3.2"
+
+CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
+HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
+PROJECTS_DIR = CLAUDE_DIR / "projects"
+SETTINGS_FILE = CLAUDE_DIR / "settings.json"
+
+# Metadata cache: transcripts are parsed once and reused until their mtime/size
+# changes. Bump CACHE_VERSION when the cached `meta` shape changes.
+CACHE_FILE = CLAUDE_DIR / ".claude-recall-cache.json"
+CACHE_VERSION = 5
+
+# Sidecar store for user-assigned session names (never touches transcripts).
+NAMES_FILE = CLAUDE_DIR / ".claude-recall-names.json"
+
+# Claude pricing per 1M tokens (USD) — adjust as rates change
+PRICING = {
+    "claude-opus-4": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    "claude-sonnet-4": {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30},
+    "claude-haiku-4": {"input": 0.80, "output": 4.00, "cache_write": 1.00, "cache_read": 0.08},
+    "default": {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+}
+
+# Per-model context window (tokens). A session's peak context is flagged when it
+# nears the model's limit, rather than against a single hardcoded number.
+CONTEXT_LIMITS = {
+    "claude-opus-4": 200_000,
+    "claude-sonnet-4": 1_000_000,
+    "claude-haiku-4": 200_000,
+    "default": 200_000,
+}
+# Warn when peak context exceeds this fraction of the model's window.
+CONTEXT_WARN_RATIO = float(os.environ.get("CLAUDE_RECALL_CTX_WARN", "0.9"))
+
+
+def _pricing_file():
+    """Locate the pricing-overrides file. Resolution order:
+
+    1. ``CLAUDE_RECALL_PRICING_FILE`` if set (explicit override).
+    2. ``pricing.json`` next to this script (where the command lives).
+    3. ``pricing.json`` in ``CLAUDE_DIR`` (~/.claude).
+
+    Returns a Path (env case: even if missing, so a bad path warns), or None.
+    """
+    env = os.environ.get("CLAUDE_RECALL_PRICING_FILE")
+    if env:
+        return Path(env).expanduser()
+    for cand in (Path(os.path.realpath(__file__)).parent / "pricing.json",
+                 CLAUDE_DIR / "pricing.json"):
+        if cand.exists():
+            return cand
+    return None
+
+
+def _load_pricing_overrides():
+    """Merge per-model rates from a pricing file over the built-in defaults.
+
+    The file is JSON keyed by model name, with rates in USD per 1M tokens, e.g.
+
+        {"your-model-name": {"input": 3.00, "output": 15.00,
+                             "cache_write": 3.75, "cache_read": 0.30,
+                             "max_input": 200000}}
+
+    Generate it for any LiteLLM gateway with scripts/gen-pricing (which writes
+    pricing.json next to this script by default, so it's picked up with no env
+    var). Keys starting with "_" (e.g. "_meta") are ignored. With no file the
+    built-in defaults are used unchanged.
+    """
+    path = _pricing_file()
+    if not path:
+        return
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        print("warning: could not load pricing file ({}): {}".format(path, e), file=sys.stderr)
+        return
+    for model, fields in data.items():
+        if model.startswith("_") or not isinstance(fields, dict):
+            continue
+        rate = {k: fields[k] for k in ("input", "output", "cache_write", "cache_read")
+                if isinstance(fields.get(k), (int, float))}
+        if rate:
+            PRICING[model] = rate
+        if isinstance(fields.get("max_input"), (int, float)):
+            CONTEXT_LIMITS[model] = int(fields["max_input"])
+
+
+_load_pricing_overrides()
+
+
+def _best_match(model, table):
+    """Return the table value whose key is the longest substring of `model`.
+
+    Longest-key wins so a specific entry (``claude-opus-4-8``) beats a generic
+    one (``claude-opus-4``). Falls back to the ``default`` entry.
+    """
+    if model:
+        best = None
+        for key in table:
+            if key != "default" and key in model and (best is None or len(key) > len(best)):
+                best = key
+        if best is not None:
+            return table[best]
+    return table["default"]
+
+
+def context_limit(model):
+    """Return the context window size for a model name (longest-match)."""
+    return _best_match(model, CONTEXT_LIMITS)
+
+
+def context_warns(peak, model):
+    """True when peak context is close enough to the model's window to flag."""
+    return peak > context_limit(model) * CONTEXT_WARN_RATIO
+
+
+def _env_int(name, default):
+    """Read an integer env var, falling back to default on unset/invalid."""
+    try:
+        return int(os.environ[name])
+    except (KeyError, ValueError):
+        return default
+
+
+# ─── Data Loading ────────────────────────────────────────────────────────────
+
+
+def to_ms(ts):
+    """Normalize a timestamp to epoch milliseconds.
+
+    Handles ISO-8601 strings (transcript format, e.g. '2026-06-01T13:53:14.255Z')
+    and numeric epochs in either seconds or milliseconds (history.jsonl format).
+    """
+    if not ts:
+        return 0
+    if isinstance(ts, (int, float)):
+        # 13-digit values are already ms; smaller values are seconds.
+        return int(ts if ts > 1e11 else ts * 1000)
+    s = str(ts).strip()
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return int(dt.timestamp() * 1000)
+    except (ValueError, AttributeError):
+        pass
+    try:  # Python 3.6 fallback (no datetime.fromisoformat)
+        base = s.replace("Z", "").split("+")[0].split(".")[0]
+        dt = datetime.strptime(base, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    except (ValueError, AttributeError):
+        return 0
+
+
+def clean_display(text):
+    """Reduce a raw user message to a readable prompt for the index.
+
+    Slash commands arrive wrapped as '<command-name>/init</command-name>...';
+    surface just the command. Otherwise strip XML-ish wrapper tags (command
+    output, caveats, system reminders) and collapse whitespace.
+    """
+    if not text:
+        return ""
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)  # strip ANSI color/style codes
+    m = re.search(r"<command-name>([^<]*)</command-name>", text)
+    if m:
+        return m.group(1).strip()
+    if re.search(r"<(?:local-command-std(?:out|err)|bash-(?:input|stdout|stderr))>", text):
+        return ""  # captured command I/O (! commands, tool output), not a typed prompt
+    stripped = re.sub(r"</?[a-z][a-z0-9-]*>", " ", text)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def extract_user_text(message):
+    """Pull the typed-prompt text out of a transcript 'user' message.
+
+    Content is either a plain string or a list of blocks; only 'text' blocks are
+    real prompts (tool_result blocks are skipped naturally).
+    """
+    content = message.get("content")
+    if isinstance(content, str):
+        return clean_display(content)
+    if isinstance(content, list):
+        parts = [
+            b.get("text", "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        return clean_display(" ".join(p for p in parts if p))
+    return ""
+
+
+def parse_transcript(path):
+    """Single-pass extraction of session metadata + token usage from a transcript.
+
+    Returns the `meta` dict that gets cached. One read of the file yields the
+    project dir (cwd), git branch, timestamps, user prompts, model, and token
+    totals — so no consumer needs to re-open the transcript.
+    """
+    meta = {
+        "messages": [],
+        "msg_count": 0,
+        "first_assistant": "",
+        "first_ts": 0,
+        "last_ts": 0,
+        "cwd": "",
+        "git_branch": "",
+        "model": None,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "turns": 0,
+        "peak_context": 0,
+    }
+
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                ts = to_ms(d.get("timestamp"))
+                if ts:
+                    if not meta["first_ts"] or ts < meta["first_ts"]:
+                        meta["first_ts"] = ts
+                    if ts > meta["last_ts"]:
+                        meta["last_ts"] = ts
+
+                if not meta["cwd"] and d.get("cwd"):
+                    meta["cwd"] = d["cwd"]
+                if not meta["git_branch"] and d.get("gitBranch"):
+                    meta["git_branch"] = d["gitBranch"]
+
+                msg = d.get("message")
+                if not isinstance(msg, dict):
+                    continue
+
+                if d.get("type") == "user" and not d.get("isMeta"):
+                    text = extract_user_text(msg)
+                    if text:
+                        meta["messages"].append(text[:500])
+                        meta["msg_count"] += 1
+
+                # First thing Claude said — a fallback label for sessions whose
+                # user turns are all trivia (extract_user_text reads text blocks
+                # from either role).
+                elif d.get("type") == "assistant" and not meta["first_assistant"]:
+                    atext = extract_user_text(msg)
+                    if atext and not is_trivial_prompt(atext):
+                        meta["first_assistant"] = atext[:300]
+
+                model = msg.get("model")
+                if not meta["model"] and model and not model.startswith("<"):
+                    meta["model"] = model  # skip placeholders like "<synthetic>"
+
+                usage = msg.get("usage")
+                if isinstance(usage, dict) and usage:
+                    meta["turns"] += 1
+                    meta["input_tokens"] += usage.get("input_tokens", 0)
+                    meta["output_tokens"] += usage.get("output_tokens", 0)
+                    meta["cache_creation_input_tokens"] += usage.get(
+                        "cache_creation_input_tokens", 0
+                    )
+                    meta["cache_read_input_tokens"] += usage.get(
+                        "cache_read_input_tokens", 0
+                    )
+                    turn_context = (
+                        usage.get("input_tokens", 0)
+                        + usage.get("cache_creation_input_tokens", 0)
+                        + usage.get("cache_read_input_tokens", 0)
+                    )
+                    meta["peak_context"] = max(meta["peak_context"], turn_context)
+    except (IOError, OSError):
+        pass
+
+    return meta
+
+
+def load_cache():
+    """Load the metadata cache; returns {} on any version mismatch or error."""
+    try:
+        with open(CACHE_FILE) as f:
+            data = json.load(f)
+        if data.get("version") == CACHE_VERSION:
+            return data.get("entries", {})
+    except (IOError, OSError, ValueError):
+        pass
+    return {}
+
+
+def save_cache(entries):
+    """Atomically write the metadata cache (best-effort)."""
+    try:
+        tmp = CACHE_FILE.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump({"version": CACHE_VERSION, "entries": entries}, f)
+        tmp.replace(CACHE_FILE)
+    except (IOError, OSError):
+        pass
+
+
+def load_names():
+    """Load user-assigned session names ({session_id: name})."""
+    try:
+        with open(NAMES_FILE) as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except (IOError, OSError, ValueError):
+        pass
+    return {}
+
+
+def save_names(names):
+    """Atomically write the session-names sidecar (best-effort)."""
+    try:
+        tmp = NAMES_FILE.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(names, f, indent=2)
+        tmp.replace(NAMES_FILE)
+    except (IOError, OSError):
+        pass
+
+
+def merge_history_only(sessions):
+    """Add sessions that exist only in history.jsonl (transcript was deleted).
+
+    The live index is built from transcripts; this is a supplementary pass so
+    that cleaned-up sessions still appear (marked '-') and stay searchable.
+    """
+    if not HISTORY_FILE.exists():
+        return
+
+    seen = set(sessions)
+    extra = {}
+    try:
+        with open(HISTORY_FILE) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                sid = d.get("sessionId", "")
+                if not sid or sid in seen:
+                    continue
+
+                ts = to_ms(d.get("timestamp"))
+                s = extra.get(sid)
+                if s is None:
+                    s = extra[sid] = {
+                        "id": sid,
+                        "project": d.get("project", ""),
+                        "cwd": d.get("project", ""),
+                        "git_branch": "",
+                        "first_ts": ts,
+                        "last_ts": ts,
+                        "messages": [],
+                        "msg_count": 0,
+                        "first_assistant": "",
+                        "model": None,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_creation_input_tokens": 0,
+                        "cache_read_input_tokens": 0,
+                        "turns": 0,
+                        "peak_context": 0,
+                        "has_transcript": False,
+                    }
+
+                disp = d.get("display", "")
+                if disp:
+                    s["messages"].append(disp)
+                    s["msg_count"] += 1
+                if ts:
+                    if not s["first_ts"] or ts < s["first_ts"]:
+                        s["first_ts"] = ts
+                    s["last_ts"] = max(s["last_ts"], ts)
+    except (IOError, OSError):
+        return
+
+    sessions.update(extra)
+
+
+def build_index():
+    """Scan projects/ for transcripts and return (sessions, transcripts).
+
+    Each transcript is the source of truth for one session. Files whose
+    mtime+size match the cache reuse their parsed metadata; only changed (or
+    new) files are re-read. Subagent transcripts are excluded.
+    """
+    cache = load_cache()
+    new_cache = {}
+    sessions = {}
+    transcripts = {}
+
+    if PROJECTS_DIR.exists():
+        for jsonl in PROJECTS_DIR.rglob("*.jsonl"):
+            if "subagents" in str(jsonl):
+                continue
+            sid = jsonl.stem
+            key = str(jsonl)
+
+            try:
+                st = jsonl.stat()
+            except OSError:
+                continue
+
+            cached = cache.get(key)
+            if (
+                cached
+                and cached.get("mtime") == st.st_mtime
+                and cached.get("size") == st.st_size
+            ):
+                meta = cached["meta"]
+            else:
+                meta = parse_transcript(jsonl)
+
+            new_cache[key] = {"mtime": st.st_mtime, "size": st.st_size, "meta": meta}
+            transcripts[sid] = jsonl
+
+            session = dict(meta)
+            session["id"] = sid
+            session["project"] = meta.get("cwd", "")
+            session["has_transcript"] = True
+            sessions[sid] = session
+
+    merge_history_only(sessions)
+
+    names = load_names()
+    for sid, session in sessions.items():
+        session["name"] = names.get(sid, "")
+
+    if new_cache != cache:
+        save_cache(new_cache)
+
+    return sessions, transcripts
+
+
+def parse_terms(query):
+    """Split a search query into lowercased whitespace-separated terms."""
+    return [t for t in (query or "").lower().split() if t]
+
+
+def terms_match(text, terms, any_mode):
+    """AND (default) or OR (any_mode) membership of terms in text."""
+    low = text.lower()
+    return any(t in low for t in terms) if any_mode else all(t in low for t in terms)
+
+
+def make_snippet(text, term, width=88):
+    """Return a one-line window of `text` centered on the first hit of `term`."""
+    text = re.sub(r"\s+", " ", text).strip()
+    i = text.lower().find(term.lower())
+    if i < 0:
+        return text[:width]
+    start = max(0, i - width // 3)
+    snip = text[start:start + width]
+    if start > 0:
+        snip = "…" + snip
+    if start + width < len(text):
+        snip = snip + "…"
+    return snip
+
+
+def first_snippet(messages, terms):
+    """First snippet from the first message that contains any term."""
+    for m in messages:
+        low = m.lower()
+        for t in terms:
+            if t in low:
+                return make_snippet(m, t)
+    return ""
+
+
+def search_transcripts(terms, transcripts, any_mode=False):
+    """Full-text search of transcript files.
+
+    Returns {session_id: snippet} for matches. AND mode requires every term to
+    appear somewhere in the file (not necessarily the same line); the snippet is
+    taken from the first matching line.
+    """
+    matches = {}
+    needed = len(terms)
+
+    for sid, path in transcripts.items():
+        seen = set()
+        snippet = ""
+        try:
+            with open(path) as f:
+                for line in f:
+                    low = line.lower()
+                    hits = [t for t in terms if t in low]
+                    if hits:
+                        if not snippet:
+                            snippet = make_snippet(line, hits[0])
+                        seen.update(hits)
+                        if any_mode or len(seen) == needed:
+                            break
+        except (IOError, OSError):
+            continue
+
+        if (any_mode and seen) or (not any_mode and len(seen) == needed):
+            matches[sid] = snippet
+
+    return matches
+
+
+def parse_when(spec):
+    """Parse a time spec into epoch ms, or None.
+
+    Accepts relative forms '30m', '24h', '7d', '2w' and absolute 'YYYY-MM-DD'.
+    """
+    if not spec:
+        return None
+    s = str(spec).strip().lower()
+    m = re.match(r"^(\d+)\s*([mhdw])$", s)
+    if m:
+        mult = {"m": 60_000, "h": 3_600_000, "d": 86_400_000, "w": 604_800_000}[m.group(2)]
+        return int(datetime.now().timestamp() * 1000 - int(m.group(1)) * mult)
+    try:
+        return int(datetime.strptime(s, "%Y-%m-%d").timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+# ─── Formatting Helpers ──────────────────────────────────────────────────────
+
+
+def estimate_cost(usage, model=None):
+    """Estimate USD cost from token usage."""
+    rates = _best_match(model, PRICING)
+
+    cost = 0.0
+    cost += (usage["input_tokens"] / 1_000_000) * rates.get("input", 0)
+    cost += (usage["output_tokens"] / 1_000_000) * rates.get("output", 0)
+    cost += (usage["cache_creation_input_tokens"] / 1_000_000) * rates.get("cache_write", 0)
+    cost += (usage["cache_read_input_tokens"] / 1_000_000) * rates.get("cache_read", 0)
+    return cost
+
+
+def cache_reuse_ratio(usage):
+    """Fraction of input-side tokens served from cache (reads / all input).
+
+    High write with low reads ⇒ low reuse ⇒ cache dollars spent without payoff.
+    """
+    read = usage.get("cache_read_input_tokens", 0)
+    denom = read + usage.get("cache_creation_input_tokens", 0) + usage.get("input_tokens", 0)
+    return (read / denom) if denom else 0.0
+
+
+def format_tokens(n):
+    """Format token count for display."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
+def format_size(size_bytes):
+    """Format byte count for display."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f}{unit}" if unit != "B" else f"{size_bytes}{unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f}TB"
+
+
+def format_timestamp(ts):
+    """Convert millisecond timestamp to readable date."""
+    if not ts:
+        return "?"
+    try:
+        return datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d %H:%M")
+    except (ValueError, OSError):
+        return "?"
+
+
+def project_short_name(project_path):
+    """Extract short project name from full path."""
+    if not project_path:
+        return "~"
+    return os.path.basename(project_path) or "~"
+
+
+def get_session_dir_size(transcripts, sid):
+    """Get total size including subagent transcripts."""
+    path = transcripts.get(sid)
+    if not path:
+        return 0
+
+    total = 0
+    session_dir = path.parent / sid
+
+    try:
+        total += path.stat().st_size
+    except OSError:
+        pass
+
+    if session_dir.is_dir():
+        for f in session_dir.rglob("*"):
+            try:
+                if f.is_file():
+                    total += f.stat().st_size
+            except OSError:
+                pass
+
+    return total
+
+
+def resolve_session_id(prefix, sessions, transcripts):
+    """Resolve a short prefix to a full session ID."""
+    matches = []
+    for sid in set(list(sessions.keys()) + list(transcripts.keys())):
+        if sid.startswith(prefix):
+            matches.append(sid)
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) == 0:
+        return None
+    return matches
+
+
+def resume_command(session):
+    """Build the shell command that resumes this session.
+
+    Claude Code resume is project-scoped, so prepend a `cd` into the session's
+    working directory unless we're already there.
+    """
+    sid = session["id"]
+    cwd = session.get("cwd") or session.get("project") or ""
+    if cwd and os.path.realpath(cwd) != os.path.realpath(os.getcwd()):
+        return f"cd {shlex.quote(cwd)} && claude --resume {sid}"
+    return f"claude --resume {sid}"
+
+
+# ─── Display ─────────────────────────────────────────────────────────────────
+
+
+# Short farewells / greetings / acks that don't describe what a session was
+# about — skipped when choosing the prompt to show as a listing label.
+TRIVIAL_PROMPTS = frozenset({
+    "goodbye", "bye", "byebye", "bye bye", "catch you later", "see ya", "see you",
+    "see you later", "later", "cya", "ciao", "adios", "peace", "good night",
+    "goodnight", "gn", "night", "thanks", "thank you", "thanks so much", "thx",
+    "ty", "ok", "okay", "k", "kk", "cool", "nice", "great", "awesome", "perfect",
+    "good", "good job", "done", "yes", "no", "yep", "nope", "yeah", "sure",
+    "exit", "quit", "stop", "hi", "hello", "hey", "yo", "sup", "test", "testing",
+})
+
+
+def is_trivial_prompt(text):
+    """True for slash-commands and short farewells/greetings/acks — these make
+    poor listing labels because they don't describe the session."""
+    t = text.strip().lower().strip("!.?,…").strip()
+    if not t or t.startswith("/"):
+        return True
+    if t.startswith("(") and t.endswith(")"):
+        return True  # bracketed placeholder like "(no content)"
+    if t.startswith("this session is being continued from a previous conversation"):
+        return True  # compaction-summary boilerplate, not a real prompt
+    return t in TRIVIAL_PROMPTS
+
+
+def session_prompts(session, limit=2):
+    """Up to `limit` substantive prompts to show for a session, in chronological
+    order — skipping farewells/acks, slash-commands, and placeholder turns. For
+    long sessions this returns the **opening prompt plus the most recent ones**
+    (bookends), so a row conveys both what the session was about and where it
+    ended. Falls back to the first thing Claude said; [] if nothing meaningful."""
+    subs = [
+        m for m in session.get("messages", [])
+        if m and len(m) > 5 and "Caveat:" not in m and not is_trivial_prompt(m)
+    ]
+    if not subs:
+        fa = session.get("first_assistant", "")
+        return [fa] if fa and not is_trivial_prompt(fa) else []
+    if limit <= 1:
+        return [subs[0]]
+    if len(subs) <= limit:
+        chosen = subs
+    else:
+        chosen = [subs[0]] + subs[-(limit - 1):]  # opening + most-recent (limit-1)
+    # Drop adjacent duplicates (same prompt repeated) while preserving order.
+    out = []
+    for m in chosen:
+        if not out or out[-1] != m:
+            out.append(m)
+    return out
+
+
+def print_session(session, transcripts, show_tokens=False, show_size=False,
+                  show_context=False, lines=2, snippet="", show_last=False):
+    """Print a single session entry."""
+    sid = session["id"]
+    start = format_timestamp(session["first_ts"])
+    proj = project_short_name(session["project"])
+    branch = session.get("git_branch") or ""
+    if branch and branch not in ("main", "master", "HEAD"):
+        proj = f"{proj}@{branch}"
+    proj = proj[:26]
+    count = session["msg_count"]
+    has_transcript = "+" if sid in transcripts else "-"
+
+    # The row leads with the opening substantive prompt (or the assigned name);
+    # any further prompts print as indented continuation lines below.
+    name = session.get("name") or ""
+    prompts = session_prompts(session, lines)
+    head = prompts[0] if prompts else ""
+    if name:
+        label = f"★ {name} — {head}" if head else f"★ {name}"
+    else:
+        label = head
+
+    extras = ""
+
+    if show_last:
+        # When sorting by recent, show last activity so the ordering is obvious.
+        extras += f"  [↻ {format_timestamp(session.get('last_ts', 0))}]"
+
+    if show_size:
+        if sid in transcripts:
+            size = get_session_dir_size(transcripts, sid)
+            extras += f"  [{format_size(size):>7}]"
+        else:
+            extras += f"  [{'---':>7}]"
+
+    if show_tokens and sid in transcripts:
+        cost = estimate_cost(session, session.get("model"))
+        extras += f"  [${cost:.2f} | out:{format_tokens(session['output_tokens'])}]"
+    elif show_tokens:
+        extras += f"  [{'---':>18}]"
+
+    if show_context and sid in transcripts:
+        peak = session["peak_context"]
+        flag = " ⚠" if context_warns(peak, session.get("model")) else ""
+        extras += f"  [ctx:{format_tokens(peak)}{flag}]"
+    elif show_context:
+        extras += f"  [{'---':>10}]"
+
+    # Truncate label to fit remaining width
+    max_msg = max(30, 120 - len(extras) - 50)
+    label = label[:max_msg]
+
+    print(
+        f"  {start}  [{sid[:8]}] {has_transcript} "
+        f"({count:>3} msgs)  {proj:<26}{extras}  {label}"
+    )
+
+    # A search snippet already supplies the match context; otherwise show the
+    # remaining prompts as continuation lines (opening is shown inline above).
+    if snippet:
+        print(f"{'':>42}↳ {snippet}")
+    else:
+        for msg in prompts[1:]:
+            print(f"{'':>42}{msg[:76]}")
+
+
+def print_token_detail(session, transcripts):
+    """Print detailed token usage for a session."""
+    sid = session["id"]
+    if sid not in transcripts:
+        print(f"\n  Session: {sid[:8]}  |  No transcript on disk")
+        return
+
+    cost = estimate_cost(session, session.get("model"))
+    model = session.get("model") or "unknown"
+    size = get_session_dir_size(transcripts, sid)
+
+    proj = project_short_name(session.get("project", ""))
+    start = format_timestamp(session.get("first_ts", 0))
+    peak = session["peak_context"]
+    peak_flag = "  ⚠ near limit" if context_warns(peak, session.get("model")) else ""
+    reuse = cache_reuse_ratio(session)
+
+    print(f"\n  Session: {sid[:8]}  |  {start}  |  {proj}  |  Model: {model}")
+    if session.get("name"):
+        print(f"  {'Name:':<20} ★ {session['name']}")
+    print(f"  {'Input:':<20} {format_tokens(session['input_tokens']):>8}")
+    print(f"  {'Output:':<20} {format_tokens(session['output_tokens']):>8}")
+    print(f"  {'Cache write:':<20} {format_tokens(session['cache_creation_input_tokens']):>8}")
+    print(f"  {'Cache read:':<20} {format_tokens(session['cache_read_input_tokens']):>8}")
+    print(f"  {'Cache reuse:':<20} {reuse * 100:>7.0f}%")
+    print(f"  {'Peak context:':<20} {format_tokens(peak):>8}{peak_flag}")
+    print(f"  {'API turns:':<20} {session['turns']:>8}")
+    print(f"  {'Disk:':<20} {format_size(size):>8}")
+    print(f"  {'Est. cost:':<20} {'$' + f'{cost:.2f}':>8}")
+    print(f"  {'Resume:':<20} {resume_command(session)}")
+
+
+# ─── Commands ────────────────────────────────────────────────────────────────
+
+
+def _resolve_or_exit(sid_prefix, sessions, transcripts):
+    """Resolve a prefix to one session id, or print a message and exit."""
+    resolved = resolve_session_id(sid_prefix, sessions, transcripts)
+    if resolved is None:
+        print(f"No session found matching '{sid_prefix}'", file=sys.stderr)
+        sys.exit(1)
+    if isinstance(resolved, list):
+        print(f"Ambiguous prefix '{sid_prefix}' — matches {len(resolved)} sessions:", file=sys.stderr)
+        for sid in resolved[:10]:
+            s = sessions.get(sid, {})
+            print(f"  {sid[:8]}  {project_short_name(s.get('project', ''))}", file=sys.stderr)
+        sys.exit(1)
+    return resolved
+
+
+def cmd_resume(sid_prefix, sessions, transcripts, run=False):
+    """Print (or with run=True, execute) the command to resume a session."""
+    sid = _resolve_or_exit(sid_prefix, sessions, transcripts)
+    session = sessions.get(sid, {})
+    cwd = session.get("cwd") or session.get("project") or ""
+    proj = project_short_name(cwd)
+    branch = session.get("git_branch") or ""
+    start = format_timestamp(session.get("first_ts", 0))
+    command = resume_command(session)
+
+    if run:
+        if sid not in transcripts:
+            print("⚠ Transcript not on disk (history-only) — resume may not work.", file=sys.stderr)
+        print(f"  $ {command}\n")
+        raise SystemExit(subprocess.call(command, shell=True))
+
+    print(f"\n  Session:  {sid}")
+    print(f"  Date:     {start}")
+    print(f"  Project:  {proj}" + (f"  ({branch})" if branch else ""))
+    if cwd:
+        print(f"  Dir:      {cwd}")
+    if sid not in transcripts:
+        print(f"\n  ⚠ Transcript not on disk (history-only) — resume may not work.")
+
+    print(f"\n  Resume with:\n")
+    print(f"    {command}\n")
+    print(f"  (add --exec to run it directly)\n")
+
+
+def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0,
+             skip_summary=False, text_only=False):
+    """Pretty-print a session's conversation, collapsing tool noise.
+
+    grep:         only show turns matching these terms (highlighted).
+    last:         show only the final N turns (after grep/text-only filters).
+    skip_summary: drop auto-generated compaction-summary turns.
+    text_only:    drop turns with no prose (pure tool-call turns).
+    """
+    sid = _resolve_or_exit(sid_prefix, sessions, transcripts)
+    if sid not in transcripts:
+        print("No transcript on disk for this session (history-only).", file=sys.stderr)
+        sys.exit(1)
+
+    session = sessions.get(sid, {})
+    terms = parse_terms(grep) if grep else []
+
+    # Collect turns first so --last can slice the tail.
+    turns = []  # (label, text, tools)
+    try:
+        with open(transcripts[sid]) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if skip_summary and d.get("isCompactSummary"):
+                    continue
+                msg = d.get("message")
+                if not isinstance(msg, dict):
+                    continue
+                t = d.get("type")
+                if t == "user" and not d.get("isMeta"):
+                    text = extract_user_text(msg)
+                    if text:
+                        turns.append(["▸ you", text, []])
+                elif t == "assistant":
+                    text, tools = assistant_summary(msg)
+                    if not (text or tools):
+                        continue
+                    # Coalesce consecutive assistant messages (text + its tool
+                    # calls) into one turn so tool-only lines don't count as turns.
+                    if turns and turns[-1][0] == "● claude":
+                        prev = turns[-1]
+                        prev[1] = (prev[1] + " " + text).strip() if text else prev[1]
+                        prev[2] = prev[2] + tools
+                    else:
+                        turns.append(["● claude", text, tools])
+    except (IOError, OSError) as e:
+        print(f"  Error reading transcript: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if text_only:
+        turns = [tr for tr in turns if tr[1].strip()]
+    if terms:
+        turns = [tr for tr in turns if tr[1] and any(t in tr[1].lower() for t in terms)]
+
+    total = len(turns)
+    truncated = bool(last) and total > last
+    if truncated:
+        turns = turns[-last:]
+
+    cost = estimate_cost(session, session.get("model"))
+    proj = project_short_name(session.get("project", ""))
+    start = format_timestamp(session.get("first_ts", 0))
+
+    print(f"\n{'═' * 70}")
+    print(f"  {sid[:8]}  |  {start}  |  {proj}  |  {session.get('model') or '?'}  |  ${cost:.2f}")
+    if session.get("name"):
+        print(f"  ★ {session['name']}")
+    note = []
+    if grep:
+        note.append(f"matching: {' '.join(terms)}")
+    if text_only:
+        note.append("text turns only")
+    if truncated:
+        note.append(f"last {last} of {total} turns")
+    if note:
+        print(f"  ({'  |  '.join(note)})")
+    print(f"{'═' * 70}")
+
+    for label, text, tools in turns:
+        _show_turn(label, text, tools, terms)
+    print()
+
+
+def _show_turn(label, text, tools, terms):
+    """Render one collected turn (text + collapsed tool markers)."""
+    text = re.sub(r"\s+", " ", text).strip()
+    if terms and text:
+        text = highlight(text, terms)
+    print(f"\n  {label}")
+    for ln in textwrap.wrap(text, width=92):
+        print(f"      {ln}")
+    if tools and not terms:
+        print(f"      {format_tools(tools)}")
+
+
+def format_tools(tools):
+    """Render tool markers, collapsing consecutive repeats: 'Bash ×3'."""
+    runs = []
+    for tn in tools:
+        if runs and runs[-1][0] == tn:
+            runs[-1][1] += 1
+        else:
+            runs.append([tn, 1])
+    return "  ".join(f"⚙ {tn}" + (f" ×{c}" if c > 1 else "") for tn, c in runs)
+
+
+def assistant_summary(message):
+    """Return (joined text, [tool names]) for an assistant message."""
+    content = message.get("content")
+    texts, tools = [], []
+    if isinstance(content, str):
+        texts.append(content)
+    elif isinstance(content, list):
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "text":
+                texts.append(b.get("text", ""))
+            elif b.get("type") == "tool_use":
+                tools.append(b.get("name", "tool"))
+    return " ".join(t for t in texts if t).strip(), tools
+
+
+def highlight(text, terms):
+    """Wrap matched terms in « » markers (no ANSI, per tool convention)."""
+    for t in terms:
+        text = re.sub("(" + re.escape(t) + ")", r"«\1»", text, flags=re.IGNORECASE)
+    return text
+
+
+def cmd_set_name(sid_prefix, name, sessions, transcripts):
+    """Assign a user name to a session (stored in the sidecar)."""
+    sid = _resolve_or_exit(sid_prefix, sessions, transcripts)
+    names = load_names()
+    names[sid] = name
+    save_names(names)
+    print(f"Named {sid[:8]} → ★ {name}")
+
+
+def cmd_unname(sid_prefix, sessions, transcripts):
+    """Remove a session's user name."""
+    sid = _resolve_or_exit(sid_prefix, sessions, transcripts)
+    names = load_names()
+    if names.pop(sid, None) is None:
+        print(f"{sid[:8]} had no name.")
+        return
+    save_names(names)
+    print(f"Removed name from {sid[:8]}.")
+
+
+def confirm(prompt, assume_yes):
+    """Ask for y/N confirmation, or auto-confirm when assume_yes is set."""
+    if assume_yes:
+        return True
+    print(prompt, end="")
+    try:
+        return input().strip().lower() == "y"
+    except (EOFError, KeyboardInterrupt):
+        print("\n  Cancelled.")
+        return False
+
+
+def cmd_remove(sid_prefix, sessions, transcripts, dry_run, assume_yes=False):
+    """Remove a specific session's transcript by ID prefix."""
+    resolved = resolve_session_id(sid_prefix, sessions, transcripts)
+
+    if resolved is None:
+        print(f"No session found matching '{sid_prefix}'", file=sys.stderr)
+        sys.exit(1)
+
+    if isinstance(resolved, list):
+        print(f"Ambiguous prefix '{sid_prefix}' — matches {len(resolved)} sessions:", file=sys.stderr)
+        for sid in resolved[:10]:
+            print(f"  {sid[:8]}  ({sid})", file=sys.stderr)
+        sys.exit(1)
+
+    sid = resolved
+    session = sessions.get(sid, {})
+    proj = project_short_name(session.get("project", ""))
+    start = format_timestamp(session.get("first_ts", 0))
+    first_msg = ""
+    for msg in session.get("messages", []):
+        if msg and len(msg) > 5:
+            first_msg = msg[:80]
+            break
+
+    print(f"\n  Session:  {sid}")
+    print(f"  Date:     {start}")
+    print(f"  Project:  {proj}")
+    print(f"  Messages: {session.get('msg_count', '?')}")
+    print(f"  Summary:  {first_msg}")
+
+    if sid in transcripts:
+        size = get_session_dir_size(transcripts, sid)
+        print(f"  Disk:     {format_size(size)}")
+    else:
+        print(f"  Disk:     No transcript on disk (history-only entry)")
+        print(f"\n  Nothing to remove — transcript already cleaned up.")
+        return
+
+    if dry_run:
+        print(f"\n  [DRY RUN] Would delete transcript and free {format_size(size)}")
+        print(f"  History index entry preserved.")
+        return
+
+    if not confirm("\n  Remove this session's transcript? [y/N] ", assume_yes):
+        print("  Cancelled.")
+        return
+
+    path = transcripts[sid]
+    freed = 0
+    try:
+        freed += path.stat().st_size
+        path.unlink()
+        session_dir = path.parent / sid
+        if session_dir.is_dir():
+            for f in session_dir.rglob("*"):
+                if f.is_file():
+                    freed += f.stat().st_size
+            shutil.rmtree(session_dir)
+    except OSError as e:
+        print(f"  Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  Removed. Freed {format_size(freed)}.")
+    print(f"  History index preserved — session still appears in search.")
+
+
+def cmd_clean(sessions, transcripts, older_than_days, dry_run, assume_yes=False):
+    """Interactive cleanup of old session transcripts."""
+    cutoff = datetime.now() - timedelta(days=older_than_days)
+    cutoff_ms = cutoff.timestamp() * 1000
+
+    candidates = []
+    for sid, path in transcripts.items():
+        session = sessions.get(sid, {})
+        last_ts = session.get("last_ts", 0)
+        if not last_ts:
+            try:
+                last_ts = path.stat().st_mtime * 1000
+            except OSError:
+                continue
+
+        if last_ts < cutoff_ms:
+            size = get_session_dir_size(transcripts, sid)
+            candidates.append((sid, path, last_ts, size))
+
+    if not candidates:
+        print(f"No transcripts older than {older_than_days} days found.")
+        return
+
+    candidates.sort(key=lambda x: x[2])
+    total_size = sum(c[3] for c in candidates)
+
+    print(f"\nFound {len(candidates)} session transcript(s) older than {older_than_days} days")
+    print(f"Total reclaimable space: {format_size(total_size)}\n")
+
+    for sid, path, ts, size in candidates:
+        session = sessions.get(sid, {})
+        proj = project_short_name(session.get("project", ""))
+        date = format_timestamp(ts)
+        first_msg = ""
+        for msg in session.get("messages", []):
+            if msg and len(msg) > 5:
+                first_msg = msg[:50]
+                break
+        print(f"  {date}  [{sid[:8]}]  {format_size(size):>8}  {proj:<20}  {first_msg}")
+
+    if dry_run:
+        print(f"\n  [DRY RUN] Would delete {len(candidates)} transcript(s), freeing {format_size(total_size)}")
+        print("  Note: history.jsonl entries are preserved (search still works)")
+        return
+
+    if not confirm(f"\n  Delete these {len(candidates)} transcript(s)? [y/N] ", assume_yes):
+        print("  Cancelled.")
+        return
+
+    deleted = 0
+    freed = 0
+    for sid, path, _, size in candidates:
+        try:
+            path.unlink()
+            freed += size
+            deleted += 1
+            session_dir = path.parent / sid
+            if session_dir.is_dir():
+                shutil.rmtree(session_dir)
+        except OSError as e:
+            print(f"  Error deleting {sid[:8]}: {e}", file=sys.stderr)
+
+    print(f"  Deleted {deleted} transcript(s), freed {format_size(freed)}")
+    print("  History index preserved — sessions still appear in search results")
+
+
+def cmd_prune_empty(sessions, transcripts, dry_run, assume_yes=False):
+    """Remove transcripts for throwaway sessions (≤1 real prompt)."""
+    candidates = []
+    for sid, path in transcripts.items():
+        session = sessions.get(sid, {})
+        if session.get("msg_count", 0) <= 1:
+            size = get_session_dir_size(transcripts, sid)
+            candidates.append((sid, path, session, size))
+
+    if not candidates:
+        print("No empty/throwaway sessions found.")
+        return
+
+    candidates.sort(key=lambda x: x[2].get("first_ts", 0))
+    total_size = sum(c[3] for c in candidates)
+
+    print(f"\nFound {len(candidates)} throwaway session(s) (≤1 prompt)")
+    print(f"Total reclaimable space: {format_size(total_size)}\n")
+    for sid, path, session, size in candidates:
+        date = format_timestamp(session.get("first_ts", 0))
+        proj = project_short_name(session.get("project", ""))
+        first_msg = next((m for m in session.get("messages", []) if m), "")[:50]
+        print(f"  {date}  [{sid[:8]}]  {format_size(size):>8}  {proj:<20}  {first_msg}")
+
+    if dry_run:
+        print(f"\n  [DRY RUN] Would delete {len(candidates)} transcript(s), freeing {format_size(total_size)}")
+        print("  Note: history.jsonl entries are preserved (search still works)")
+        return
+
+    if not confirm(f"\n  Delete these {len(candidates)} transcript(s)? [y/N] ", assume_yes):
+        print("  Cancelled.")
+        return
+
+    deleted = freed = 0
+    for sid, path, _, size in candidates:
+        try:
+            path.unlink()
+            freed += size
+            deleted += 1
+            session_dir = path.parent / sid
+            if session_dir.is_dir():
+                shutil.rmtree(session_dir)
+        except OSError as e:
+            print(f"  Error deleting {sid[:8]}: {e}", file=sys.stderr)
+
+    print(f"  Deleted {deleted} transcript(s), freed {format_size(freed)}")
+    print("  History index preserved — sessions still appear in search results")
+
+
+def cmd_forget(sessions, transcripts, dry_run, assume_yes=False):
+    """Purge history-only 'ghost' sessions (transcript already deleted) from
+    Claude Code's history.jsonl, and drop their name labels.
+
+    This is the ONLY path that edits history.jsonl — it is opt-in and never runs
+    automatically. Sessions with a transcript on disk are left untouched.
+    """
+    orphans = {sid: s for sid, s in sessions.items() if sid not in transcripts}
+
+    if not orphans:
+        print("No history-only sessions to forget — every session still has a transcript.")
+        return
+
+    ordered = sorted(orphans.values(), key=lambda s: s.get("first_ts", 0))
+    print(f"\nFound {len(orphans)} history-only session(s) (no transcript on disk):\n")
+    for s in ordered:
+        date = format_timestamp(s.get("first_ts", 0))
+        proj = project_short_name(s.get("project", ""))
+        first_msg = " ".join(next((m for m in s.get("messages", []) if m), "").split())[:50]
+        print(f"  {date}  [{s['id'][:8]}]  {proj:<20}  {first_msg}")
+
+    print("\n  These are NOT recoverable — the transcript is already gone.")
+    print("  Forgetting drops their entries from Claude Code's history.jsonl")
+    print("  (and any name labels), so they stop appearing in search.")
+
+    if dry_run:
+        print(f"\n  [DRY RUN] Would forget {len(orphans)} session(s).")
+        return
+
+    if not confirm(f"\n  Forget these {len(orphans)} session(s)? [y/N] ", assume_yes):
+        print("  Cancelled.")
+        return
+
+    # Rewrite history.jsonl, dropping lines for the orphan session ids.
+    removed = 0
+    if HISTORY_FILE.exists():
+        kept = []
+        try:
+            with open(HISTORY_FILE) as f:
+                for line in f:
+                    try:
+                        d = json.loads(line)
+                    except json.JSONDecodeError:
+                        kept.append(line)  # keep unparseable lines untouched
+                        continue
+                    if d.get("sessionId", "") in orphans:
+                        removed += 1
+                    else:
+                        kept.append(line)
+            tmp = HISTORY_FILE.with_suffix(".tmp")
+            with open(tmp, "w") as f:
+                f.writelines(kept)
+            tmp.replace(HISTORY_FILE)
+        except (IOError, OSError) as e:
+            print(f"  Error rewriting history.jsonl: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Drop name labels for the forgotten sessions.
+    names = load_names()
+    dropped = [sid for sid in list(names) if sid in orphans]
+    for sid in dropped:
+        names.pop(sid, None)
+    if dropped:
+        save_names(names)
+
+    print(f"  Forgot {len(orphans)} session(s) "
+          f"({removed} history line(s) removed, {len(dropped)} name(s) dropped).")
+
+
+# ─── Claude Code hooks (config-driven alternative to the cc wrapper) ──────────
+#
+# `hook session-start` / `hook session-end` are invoked by Claude Code via
+# settings.json (installed by `install-hooks`). They read the hook's JSON event
+# on stdin and must stay fast and crash-proof — a raised exception or slow run
+# would disrupt the user's session, so every path swallows errors and exits 0.
+
+
+def _git_branch(cwd):
+    """Current git branch for cwd, or "" (best-effort, fast, never raises)."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def cmd_hook_session_start():
+    """SessionStart hook: auto-name the session `folder@branch` via sessionTitle.
+
+    Only `startup`/`resume` sources accept a title (per Claude Code); others are
+    a no-op. Output is the hookSpecificOutput JSON Claude Code reads on stdout.
+    """
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return
+    if data.get("source", "startup") not in ("startup", "resume"):
+        return
+    cwd = data.get("cwd") or os.getcwd()
+    title = project_short_name(cwd)
+    branch = _git_branch(cwd)
+    if branch and branch not in ("main", "master", "HEAD"):
+        title = f"{title}@{branch}"
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "sessionTitle": title,
+        }
+    }))
+
+
+def cmd_hook_session_end():
+    """SessionEnd hook: prune the just-ended transcript if it's throwaway (≤1
+    prompt). Real sessions are left untouched. Mirrors `prune-empty`, scoped to
+    the one session Claude Code names on stdin."""
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return
+    tpath = data.get("transcript_path")
+    if not tpath:
+        return
+    path = Path(tpath)
+    if not path.exists():
+        return
+    try:
+        meta = parse_transcript(path)
+        if meta.get("msg_count", 0) > 1:
+            return  # real conversation — keep it
+        sid = path.stem
+        path.unlink()
+        sub = path.parent / sid
+        if sub.is_dir():
+            shutil.rmtree(sub)
+        print(f"claude-recall: pruned throwaway session {sid[:8]}", file=sys.stderr)
+    except Exception:
+        pass
+
+
+# settings.json hook groups we manage, keyed by event name.
+_HOOK_EVENTS = ("SessionStart", "SessionEnd")
+_HOOK_TAGS = {"SessionStart": "hook session-start", "SessionEnd": "hook session-end"}
+
+
+def _group_is_ours(group, tag):
+    """True if a settings hook-group runs our `hook <event>` command."""
+    return any(tag in h.get("command", "") for h in group.get("hooks", []))
+
+
+def cmd_install_hooks(uninstall=False, dry_run=False):
+    """Install (or remove) the SessionStart/SessionEnd hooks in settings.json.
+
+    Idempotent: re-running is a no-op. Backs up settings.json before writing and
+    writes atomically. The hook command points at this script's absolute path so
+    it works regardless of PATH.
+    """
+    self_path = os.path.realpath(__file__)
+    commands = {ev: f"{shlex.quote(self_path)} {_HOOK_TAGS[ev]}" for ev in _HOOK_EVENTS}
+
+    settings = {}
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE) as f:
+                settings = json.load(f)
+        except (IOError, OSError, ValueError) as e:
+            print(f"Could not read {SETTINGS_FILE}: {e}", file=sys.stderr)
+            sys.exit(1)
+    if not isinstance(settings, dict):
+        print(f"{SETTINGS_FILE} is not a JSON object — refusing to edit.", file=sys.stderr)
+        sys.exit(1)
+
+    hooks = settings.get("hooks", {})
+    changed = False
+
+    for ev in _HOOK_EVENTS:
+        tag = _HOOK_TAGS[ev]
+        groups = hooks.get(ev, [])
+        if uninstall:
+            kept = [g for g in groups if not _group_is_ours(g, tag)]
+            if len(kept) != len(groups):
+                changed = True
+            if kept:
+                hooks[ev] = kept
+            elif ev in hooks:
+                del hooks[ev]
+        else:
+            if any(_group_is_ours(g, tag) for g in groups):
+                continue  # already installed
+            groups.append({"hooks": [{"type": "command", "command": commands[ev]}]})
+            hooks[ev] = groups
+            changed = True
+
+    if not changed:
+        print("Nothing to change — claude-recall hooks are already "
+              + ("absent." if uninstall else "installed."))
+        return
+
+    if hooks:
+        settings["hooks"] = hooks
+    else:
+        settings.pop("hooks", None)
+
+    if dry_run:
+        print(f"[DRY RUN] Would write to {SETTINGS_FILE}:\n")
+        print(json.dumps({"hooks": settings.get("hooks", {})}, indent=2))
+        return
+
+    if SETTINGS_FILE.exists():
+        backup = SETTINGS_FILE.parent / (SETTINGS_FILE.name + ".bak")
+        try:
+            shutil.copy2(SETTINGS_FILE, backup)
+        except OSError as e:
+            print(f"Could not back up settings: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        backup = None
+
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SETTINGS_FILE.parent / (SETTINGS_FILE.name + ".tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(settings, f, indent=2)
+        tmp.replace(SETTINGS_FILE)
+    except OSError as e:
+        print(f"Could not write {SETTINGS_FILE}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if uninstall:
+        print(f"Removed claude-recall hooks from {SETTINGS_FILE}")
+    else:
+        print(f"Installed claude-recall hooks in {SETTINGS_FILE}:")
+        print("  • SessionStart → auto-names the session  (folder@branch)")
+        print("  • SessionEnd   → prunes throwaway (≤1-prompt) sessions on exit")
+    if backup:
+        print(f"  Previous settings backed up to {backup}")
+    print("  Restart Claude Code (or start a new session) for it to take effect.")
+
+
+def cmd_stats(session_list, transcripts, scope=""):
+    """Show summary statistics over a (possibly filtered) list of sessions.
+
+    scope: a label like "project=my-project" appended to the header when the
+    stats cover a filtered subset rather than everything.
+    """
+    projects = defaultdict(int)
+    total_msgs = 0
+    dates = []
+    total_tokens = {"input": 0, "output": 0, "cache_write": 0, "cache_read": 0}
+    total_cost = 0.0
+    total_disk = 0
+    on_disk = [s for s in session_list if s["id"] in transcripts]
+
+    for s in session_list:
+        projects[project_short_name(s["project"])] += 1
+        total_msgs += s["msg_count"]
+        if s["first_ts"]:
+            dates.append(s["first_ts"])
+
+    for s in on_disk:
+        total_disk += get_session_dir_size(transcripts, s["id"])
+        total_tokens["input"] += s["input_tokens"]
+        total_tokens["output"] += s["output_tokens"]
+        total_tokens["cache_write"] += s["cache_creation_input_tokens"]
+        total_tokens["cache_read"] += s["cache_read_input_tokens"]
+        total_cost += estimate_cost(s, s.get("model"))
+
+    label = "Sessions (filtered):" if scope else "Sessions in history: "
+    print(f"{label}   {len(session_list)}" + (f"   [{scope}]" if scope else ""))
+    print(f"Transcripts on disk:    {len(on_disk)}")
+    print(f"Total prompts:          {total_msgs}")
+    print(f"Disk usage:             {format_size(total_disk)}")
+    if dates:
+        print(
+            f"Date range:             {format_timestamp(min(dates))} → {format_timestamp(max(dates))}"
+        )
+    print(f"\nToken Usage (transcripts on disk):")
+    print(f"  Input:                {format_tokens(total_tokens['input'])}")
+    print(f"  Output:               {format_tokens(total_tokens['output'])}")
+    print(f"  Cache write:          {format_tokens(total_tokens['cache_write'])}")
+    print(f"  Cache read:           {format_tokens(total_tokens['cache_read'])}")
+    print(f"  Estimated total cost: ${total_cost:.2f}")
+
+    # Cache efficiency: how much input-side work was served from cache, and which
+    # sessions paid to write cache they barely reused.
+    overall = cache_reuse_ratio({
+        "cache_read_input_tokens": total_tokens["cache_read"],
+        "cache_creation_input_tokens": total_tokens["cache_write"],
+        "input_tokens": total_tokens["input"],
+    })
+    low_reuse = []
+    for s in on_disk:
+        write = s["cache_creation_input_tokens"]
+        if write >= 50_000 and cache_reuse_ratio(s) < 0.5:
+            low_reuse.append((write - s["cache_read_input_tokens"], s))
+    print(f"\nCache efficiency:")
+    print(f"  Reuse ratio:          {overall * 100:.0f}%   (reads / all input tokens)")
+    if low_reuse:
+        low_reuse.sort(key=lambda x: -x[0])
+        print(f"  Low-reuse sessions (paid to write cache, reused little):")
+        for _, s in low_reuse[:5]:
+            proj = project_short_name(s.get("project", ""))
+            print(f"    [{s['id'][:8]}] {proj:<18} "
+                  f"write {format_tokens(s['cache_creation_input_tokens']):>7}  "
+                  f"read {format_tokens(s['cache_read_input_tokens']):>7}  "
+                  f"reuse {cache_reuse_ratio(s) * 100:>3.0f}%")
+
+    print(f"\nBy project:")
+    for proj, count in sorted(projects.items(), key=lambda x: -x[1]):
+        print(f"  {count:>4}  {proj}")
+
+
+def filter_sessions(sessions, transcripts, args):
+    """Apply search + filters from args. Returns (results_list, snippets)."""
+    results = list(sessions.values())
+    snippets = {}
+
+    # By default, hide history-only "ghost" sessions (transcript deleted — not
+    # recoverable). --all/--include-deleted brings them back.
+    if not getattr(args, "all", False):
+        results = [s for s in results if s["id"] in transcripts]
+
+    # Search — space-separated terms, AND by default (--any for OR)
+    if args.search:
+        terms = parse_terms(args.search)
+        text_matches = set()
+        for sid, s in sessions.items():
+            hay = " ".join(s["messages"] + [s.get("name", ""), s.get("project", "")])
+            if terms_match(hay, terms, args.any):
+                text_matches.add(sid)
+                snip = first_snippet(s["messages"], terms)
+                if snip:
+                    snippets[sid] = snip
+        if args.full_text:
+            for sid, snip in search_transcripts(terms, transcripts, args.any).items():
+                text_matches.add(sid)
+                snippets.setdefault(sid, snip)
+        results = [s for s in results if s["id"] in text_matches]
+
+    if args.project:
+        pf = args.project.lower()
+        results = [s for s in results if pf in project_short_name(s.get("project", "")).lower()]
+
+    if args.branch:
+        bf = args.branch.lower()
+        results = [s for s in results if bf in (s.get("git_branch", "") or "").lower()]
+
+    if args.date:
+        results = [s for s in results if format_timestamp(s["first_ts"]).startswith(args.date)]
+
+    if args.since:
+        cutoff = parse_when(args.since)
+        if cutoff is None:
+            print(f"Could not parse --since '{args.since}' (try 7d, 24h, 2w, or YYYY-MM-DD)", file=sys.stderr)
+            sys.exit(1)
+        results = [s for s in results if s.get("last_ts", 0) >= cutoff]
+
+    if args.until:
+        cutoff = parse_when(args.until)
+        if cutoff is None:
+            print(f"Could not parse --until '{args.until}' (try 7d, 24h, 2w, or YYYY-MM-DD)", file=sys.stderr)
+            sys.exit(1)
+        results = [s for s in results if s.get("last_ts", 0) <= cutoff]
+
+    return results, snippets
+
+
+def filters_scope(args):
+    """Short label describing active filters, for the stats header (or "")."""
+    parts = []
+    if args.search:
+        parts.append(("any:" if args.any else "all:") + args.search)
+    if args.project:
+        parts.append(f"project={args.project}")
+    if args.branch:
+        parts.append(f"branch={args.branch}")
+    if args.date:
+        parts.append(f"date={args.date}")
+    if args.since:
+        parts.append(f"since={args.since}")
+    if args.until:
+        parts.append(f"until={args.until}")
+    return ", ".join(parts)
+
+
+SHORT_HELP = """\
+claude-recall {ver} — search, analyze, and manage Claude Code sessions
+
+Usage: claude-recall [filter/sort options]   List & search sessions (default)
+       claude-recall COMMAND [args]          Run a command
+
+Listing (the default — no command)
+  (no args)             List recent sessions
+  -s, --search TERMS    Search; space-separated terms are AND ( --any = OR )
+  -f, --full-text       Also search inside transcripts (slower; shows snippets)
+  --tokens  --context  --size  --detail              Enrich the listing
+  --lines N   prompts shown per session (default 2: opening + most recent)
+  --sort date|recent|cost|size|tokens|messages   -n N   --reverse
+
+Filter   --project NAME   --branch NAME   --since/--until 7d|24h|2w|DATE   --date
+         --all   include deleted, history-only sessions (hidden by default)
+
+Commands  (deletions take -y to skip the prompt, --dry-run to preview)
+  show ID [--last N --grep T --no-summary --text-only]   Read a conversation
+  resume ID [--exec]            Print the resume command ( --exec runs it )
+  stats                         Token/cost summary (honors filters)
+  export csv|json               Dump sessions (honors filters/sort)
+  name ID NAME  /  unname ID    Assign / clear a label
+  remove ID                     Delete one session's transcript
+  clean [--older-than N]        Bulk cleanup of old transcripts
+  prune-empty                   Drop throwaway (≤1-prompt) sessions
+  forget                        Purge deleted-transcript sessions from history.jsonl
+
+  claude-recall COMMAND -h    help for a specific command
+  claude-recall --help-all    full option list
+  https://github.com/claibinis/claude-recall
+"""
+
+
+def print_short_help():
+    print(SHORT_HELP.format(ver=__version__))
+
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+
+def build_parser():
+    # ── Shared option groups (reused by listing + stats + export) ──
+    filters = argparse.ArgumentParser(add_help=False)
+    fg = filters.add_argument_group("search & filters")
+    fg.add_argument("-s", "--search", help="Search by keyword(s); space-separated terms are AND by default")
+    fg.add_argument("--any", action="store_true", help="Match ANY search term instead of ALL (OR)")
+    fg.add_argument(
+        "-f", "--full-text", action="store_true",
+        help="Search transcript files too (slower); shows matching snippets",
+    )
+    fg.add_argument("--project", help="Filter by project name (matches the directory name)")
+    fg.add_argument("--branch", help="Filter by git branch (substring)")
+    fg.add_argument("--date", help="Filter by date prefix (e.g. 2026-04)")
+    fg.add_argument("--since", metavar="WHEN", help="Only sessions active since 7d/24h/2w or YYYY-MM-DD")
+    fg.add_argument("--until", metavar="WHEN", help="Only sessions active before 7d/24h/2w or YYYY-MM-DD")
+    fg.add_argument(
+        "--all", "--include-deleted", dest="all", action="store_true",
+        help="Include history-only sessions whose transcript was deleted (hidden by default)",
+    )
+
+    display = argparse.ArgumentParser(add_help=False)
+    dg = display.add_argument_group("display")
+    dg.add_argument("--tokens", action="store_true", help="Show token usage and cost (composable)")
+    dg.add_argument("--context", action="store_true", help="Show peak context window (composable)")
+    dg.add_argument("--size", action="store_true", help="Show transcript file sizes (composable)")
+
+    ordering = argparse.ArgumentParser(add_help=False)
+    og = ordering.add_argument_group("ordering")
+    og.add_argument("-n", "--limit", type=int, default=0, help="Limit results")
+    og.add_argument("--reverse", action="store_true", help="Show oldest first")
+    og.add_argument(
+        "--sort", choices=["date", "recent", "tokens", "cost", "size", "messages"],
+        default="date", help="Sort order (default: date; 'recent' = last activity)",
+    )
+
+    # ── Top-level parser (no command → listing) ──
+    parser = argparse.ArgumentParser(
+        prog="claude-recall",
+        description="Search, analyze, and manage Claude Code sessions",
+        add_help=False,  # custom -h (concise) + --help-all (full) below
+        parents=[filters, display, ordering],
+        epilog="Examples:\n"
+        "  claude-recall                          List all sessions\n"
+        "  claude-recall -s 'deploy' --tokens     Search with cost info\n"
+        "  claude-recall --size --sort size -n 10 Top 10 by disk usage\n"
+        "  claude-recall -s 'deploy retry' -f     AND search (all words) in transcripts\n"
+        "  claude-recall --since 7d --branch fix  Last week, on branches matching 'fix'\n"
+        "  claude-recall show cf21fedb            Read a session's conversation\n"
+        "  claude-recall resume cf21fedb --exec   Jump straight back into a session\n"
+        "  claude-recall name cf21 'gpu plan'     Name a session for later\n"
+        "  claude-recall clean --older-than 60    Bulk cleanup\n",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("-h", "--help", action="store_true", help="Show concise help")
+    parser.add_argument("--help-all", action="store_true", help="Show the full option list")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--lines", type=int, default=_env_int("CLAUDE_RECALL_LINES", 2), metavar="N",
+        help="Prompt lines per session in the listing — opening + most recent (default: 2; "
+             "set CLAUDE_RECALL_LINES to change the default)",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Show even more prompt lines per session")
+    parser.add_argument("--detail", action="store_true", help="Expanded per-session breakdown instead of inline")
+
+    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+
+    p_show = sub.add_parser("show", help="Print a session's conversation by ID prefix")
+    p_show.add_argument("id", metavar="ID", help="Session ID prefix")
+    p_show.add_argument("--last", type=int, default=0, metavar="N", help="Only the final N turns")
+    p_show.add_argument("--grep", metavar="TERMS", help="Only show turns matching these terms")
+    p_show.add_argument("--no-summary", action="store_true", help="Skip compaction-summary turns")
+    p_show.add_argument("--text-only", action="store_true", help="Only turns with prose (drop tool-only turns)")
+
+    p_resume = sub.add_parser("resume", help="Print/run the command to resume a session")
+    p_resume.add_argument("id", metavar="ID", help="Session ID prefix")
+    p_resume.add_argument("--exec", action="store_true", help="Run the command instead of printing it")
+
+    sub.add_parser("stats", parents=[filters], help="Summary statistics (honors filters)")
+
+    p_export = sub.add_parser("export", parents=[filters, display, ordering], help="Export sessions (honors filters/sort)")
+    p_export.add_argument("format", choices=["csv", "json"], help="Export format")
+
+    p_name = sub.add_parser("name", help="Assign a name to a session (stored separately; transcript untouched)")
+    p_name.add_argument("id", metavar="ID", help="Session ID prefix")
+    p_name.add_argument("name", metavar="NAME", help="Name to assign")
+
+    p_unname = sub.add_parser("unname", help="Remove a session's assigned name")
+    p_unname.add_argument("id", metavar="ID", help="Session ID prefix")
+
+    p_remove = sub.add_parser("remove", help="Remove a specific session transcript by ID prefix")
+    p_remove.add_argument("id", metavar="ID", help="Session ID prefix")
+    p_remove.add_argument("--dry-run", action="store_true", help="Preview without deleting")
+    p_remove.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
+
+    p_clean = sub.add_parser("clean", help="Bulk cleanup old transcripts")
+    p_clean.add_argument("--older-than", type=int, default=90, help="Days threshold (default: 90)")
+    p_clean.add_argument("--dry-run", action="store_true", help="Preview without deleting")
+    p_clean.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
+
+    p_prune = sub.add_parser("prune-empty", help="Remove throwaway sessions (≤1 prompt)")
+    p_prune.add_argument("--dry-run", action="store_true", help="Preview without deleting")
+    p_prune.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
+
+    p_forget = sub.add_parser(
+        "forget",
+        help="Purge history-only sessions (transcript already gone) from history.jsonl",
+    )
+    p_forget.add_argument("--dry-run", action="store_true", help="Preview without forgetting")
+    p_forget.add_argument("-y", "--yes", action="store_true", help="Skip the confirmation prompt")
+
+    p_inst = sub.add_parser(
+        "install-hooks",
+        help="Install Claude Code SessionStart/SessionEnd hooks (config alternative to the cc wrapper)",
+    )
+    p_inst.add_argument("--uninstall", action="store_true", help="Remove the hooks instead of installing")
+    p_inst.add_argument("--dry-run", action="store_true", help="Show the settings.json change without writing")
+
+    p_hook = sub.add_parser("hook", help="(internal) handle a Claude Code hook event from stdin")
+    p_hook.add_argument("event", choices=["session-start", "session-end"])
+
+    return parser
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.help_all:
+        parser.print_help()
+        return
+    if args.help:
+        print_short_help()
+        return
+
+    # Hooks and the installer run before (and without) the index — hooks must be
+    # fast, and the installer only edits settings.json.
+    if args.command == "hook":
+        if args.event == "session-start":
+            cmd_hook_session_start()
+        else:
+            cmd_hook_session_end()
+        return
+    if args.command == "install-hooks":
+        cmd_install_hooks(uninstall=args.uninstall, dry_run=args.dry_run)
+        return
+
+    sessions, transcripts = build_index()
+
+    if not sessions and not transcripts:
+        print("No sessions found. Is Claude Code installed?", file=sys.stderr)
+        print(f"Looked in: {CLAUDE_DIR}", file=sys.stderr)
+        sys.exit(1)
+
+    # ── Action commands (subcommands, exclusive) ──
+    cmd = args.command
+
+    if cmd == "name":
+        cmd_set_name(args.id, args.name, sessions, transcripts)
+        return
+
+    if cmd == "unname":
+        cmd_unname(args.id, sessions, transcripts)
+        return
+
+    if cmd == "show":
+        cmd_show(args.id, sessions, transcripts, grep=args.grep,
+                 last=args.last, skip_summary=args.no_summary, text_only=args.text_only)
+        return
+
+    if cmd == "resume":
+        cmd_resume(args.id, sessions, transcripts, run=args.exec)
+        return
+
+    if cmd == "remove":
+        cmd_remove(args.id, sessions, transcripts, args.dry_run, args.yes)
+        return
+
+    if cmd == "clean":
+        cmd_clean(sessions, transcripts, args.older_than, args.dry_run, args.yes)
+        return
+
+    if cmd == "prune-empty":
+        cmd_prune_empty(sessions, transcripts, args.dry_run, args.yes)
+        return
+
+    if cmd == "forget":
+        cmd_forget(sessions, transcripts, args.dry_run, args.yes)
+        return
+
+    # ── Build result set (search + filters; stats & export respect these) ──
+
+    results, snippets = filter_sessions(sessions, transcripts, args)
+
+    if cmd == "stats":
+        cmd_stats(results, transcripts, scope=filters_scope(args))
+        return
+
+    # Sorting
+    if args.sort == "date":
+        results.sort(key=lambda x: x["first_ts"], reverse=not args.reverse)
+    elif args.sort == "recent":
+        results.sort(key=lambda x: x.get("last_ts", 0), reverse=not args.reverse)
+    elif args.sort == "messages":
+        results.sort(key=lambda x: x["msg_count"], reverse=not args.reverse)
+    elif args.sort in ("tokens", "cost", "size"):
+        scored = []
+        for s in results:
+            sid = s["id"]
+            if args.sort == "size":
+                score = get_session_dir_size(transcripts, sid)
+            elif sid in transcripts:
+                if args.sort == "tokens":
+                    score = s["output_tokens"] + s["input_tokens"]
+                else:
+                    score = estimate_cost(s, s.get("model"))
+            else:
+                score = 0
+            scored.append((s, score))
+        scored.sort(key=lambda x: x[1], reverse=not args.reverse)
+        results = [s for s, _ in scored]
+
+    # Limit
+    if args.limit:
+        results = results[: args.limit]
+
+    # ── Export ──
+
+    if cmd == "export" and args.format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        headers = ["session_id", "name", "start", "end", "project", "branch", "messages", "has_transcript", "first_message"]
+        if args.tokens:
+            headers += ["input_tokens", "output_tokens", "cache_write", "cache_read", "est_cost"]
+        if args.size:
+            headers.append("size_bytes")
+        if args.context:
+            headers.append("peak_context")
+        writer.writerow(headers)
+
+        for s in results:
+            first_msg = next((m for m in s["messages"] if m and len(m) > 5), "")
+            row = [
+                s["id"], s.get("name", ""), format_timestamp(s["first_ts"]), format_timestamp(s["last_ts"]),
+                s["project"], s.get("git_branch", ""), s["msg_count"], s["id"] in transcripts, first_msg[:200],
+            ]
+            if args.tokens:
+                if s["id"] in transcripts:
+                    cost = estimate_cost(s, s.get("model"))
+                    row += [s["input_tokens"], s["output_tokens"],
+                            s["cache_creation_input_tokens"],
+                            s["cache_read_input_tokens"], f"{cost:.2f}"]
+                else:
+                    row += ["", "", "", "", ""]
+            if args.size:
+                row.append(get_session_dir_size(transcripts, s["id"]))
+            if args.context:
+                if s["id"] in transcripts:
+                    row.append(s["peak_context"])
+                else:
+                    row.append("")
+            writer.writerow(row)
+        print(output.getvalue())
+        return
+
+    if cmd == "export" and args.format == "json":
+        export_data = []
+        for s in results:
+            entry = {
+                "session_id": s["id"],
+                "name": s.get("name", ""),
+                "start": format_timestamp(s["first_ts"]),
+                "end": format_timestamp(s["last_ts"]),
+                "project": s["project"],
+                "msg_count": s["msg_count"],
+                "has_transcript": s["id"] in transcripts,
+                "git_branch": s.get("git_branch", ""),
+                "resume": resume_command(s),
+                "messages": s["messages"][:10],
+            }
+            if args.tokens and s["id"] in transcripts:
+                entry["tokens"] = {
+                    "input_tokens": s["input_tokens"],
+                    "output_tokens": s["output_tokens"],
+                    "cache_creation_input_tokens": s["cache_creation_input_tokens"],
+                    "cache_read_input_tokens": s["cache_read_input_tokens"],
+                    "turns": s["turns"],
+                    "peak_context": s["peak_context"],
+                    "model": s.get("model"),
+                }
+                entry["est_cost_usd"] = round(estimate_cost(s, s.get("model")), 2)
+            if args.size:
+                entry["size_bytes"] = get_session_dir_size(transcripts, s["id"])
+            if args.context and s["id"] in transcripts:
+                entry["peak_context"] = s["peak_context"]
+            export_data.append(entry)
+        print(json.dumps(export_data, indent=2))
+        return
+
+    # ── Display ──
+
+    # Detail mode: expanded per-session view
+    if args.detail:
+        print(f"\nSession Details ({len(results)} sessions):")
+        for s in results:
+            print_token_detail(s, transcripts)
+        return
+
+    # Default: listing with composable enrichments. Each row shows up to
+    # `--lines` substantive prompts (opening + most recent); -v bumps that.
+    lines = max(1, args.lines)
+    if args.verbose:
+        lines = max(lines, 6)
+    print(
+        f"\nClaude Code Sessions ({len(results)} of {len(sessions)})  "
+        f"[+ = transcript on disk, - = history only]\n"
+    )
+    for s in results:
+        print_session(
+            s, transcripts,
+            show_tokens=args.tokens,
+            show_size=args.size,
+            show_context=args.context,
+            lines=lines,
+            snippet=snippets.get(s["id"], ""),
+            show_last=(args.sort == "recent"),
+        )
+
+    print(
+        f"\n  {len(results)} sessions  |  "
+        f"{len(transcripts)} transcripts on disk  |  "
+        f"{len(sessions)} total in history"
+    )
+
+
+if __name__ == "__main__":
+    main()

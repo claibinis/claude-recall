@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""gen-pricing — build a claude-recall pricing file from a LiteLLM gateway.
+
+Queries any LiteLLM proxy's standard ``/model/info`` endpoint and writes a JSON
+pricing file (USD per 1M tokens). Because ``/model/info`` is part of the LiteLLM
+proxy API, this works against *any* LiteLLM-backed gateway, not one endpoint.
+
+By default it writes ``pricing.json`` next to the ``claude-recall`` script, which
+claude-recall auto-loads — no environment variable to set. Override the location
+with ``--out`` (and/or ``CLAUDE_RECALL_PRICING_FILE``), or use ``--out -`` for
+stdout.
+
+You must provide credentials for the gateway (or already be authenticated to it).
+Nothing is hardcoded:
+
+    export LITELLM_BASE_URL=https://your-litellm-gateway.example.com
+    export LITELLM_API_KEY=sk-...                  # a key valid for that gateway
+
+    ./scripts/gen-pricing                  # writes ../pricing.json (auto-loaded)
+    ./scripts/gen-pricing --discount 25    # bake in a 25% negotiated discount
+    ./scripts/gen-pricing --out -          # print to stdout instead
+
+Optional:
+    LITELLM_INSECURE=1   skip TLS verification (internal gateways with a private CA)
+
+Requires: Python 3.6+ (no external dependencies).
+"""
+
+import argparse
+import json
+import os
+import ssl
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+
+M = 1_000_000
+
+# Default output: pricing.json next to the claude-recall script (repo root, the
+# parent of this scripts/ dir) — the location claude-recall auto-discovers.
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+DEFAULT_OUT = os.path.join(ROOT, "pricing.json")
+
+
+def per_million(x, factor=1.0):
+    """Per-token rate → per-1M-tokens, scaled by `factor`; None passes through."""
+    return round(x * M * factor, 6) if isinstance(x, (int, float)) else None
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="gen-pricing",
+        description="Generate a claude-recall pricing.json from a LiteLLM gateway.",
+    )
+    ap.add_argument(
+        "--discount", type=float, default=0.0, metavar="PCT",
+        help="Bake in a percentage discount off the gateway's rates "
+             "(e.g. 25 = 25%% off). Applies to input/output/cache prices.",
+    )
+    ap.add_argument(
+        "--out", default=DEFAULT_OUT, metavar="PATH",
+        help="Where to write the pricing file ('-' for stdout). "
+             "Default: pricing.json next to claude-recall (auto-loaded).",
+    )
+    args = ap.parse_args()
+
+    if not (0.0 <= args.discount < 100.0):
+        sys.exit("error: --discount must be between 0 and 100 (got {}).".format(args.discount))
+    factor = 1.0 - args.discount / 100.0
+
+    base = os.environ.get("LITELLM_BASE_URL")
+    key = os.environ.get("LITELLM_API_KEY")
+    if not base:
+        sys.exit("error: LITELLM_BASE_URL is not set.\n"
+                 "  export LITELLM_BASE_URL=https://your-litellm-gateway.example.com")
+    if not key:
+        sys.exit("error: LITELLM_API_KEY is not set. Provide a key for the gateway "
+                 "(or your login token).\n"
+                 "  export LITELLM_API_KEY=sk-...")
+
+    url = base.rstrip("/") + "/model/info"
+    req = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + key,
+        "Accept": "application/json",  # some gateways return HTML without this
+    })
+
+    ctx = None
+    if os.environ.get("LITELLM_INSECURE"):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            ctype = resp.headers.get("Content-Type", "")
+            body = resp.read()
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = "\n  Response: " + e.read()[:300].decode("utf-8", "replace").strip()
+        except Exception:
+            pass
+        sys.exit("error: {} returned HTTP {} {}. Check LITELLM_API_KEY / your login.{}"
+                 .format(url, e.code, e.reason, detail))
+    except urllib.error.URLError as e:
+        sys.exit("error: could not reach {}: {}\n"
+                 "  (for an internal gateway with a private CA, try LITELLM_INSECURE=1)"
+                 .format(url, e.reason))
+
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        snippet = body[:300].decode("utf-8", "replace").strip() or "(empty body)"
+        sys.exit(
+            "error: {} did not return JSON (Content-Type: {}, {} bytes).\n"
+            "  Make sure LITELLM_BASE_URL points at the LiteLLM *proxy API* base\n"
+            "  (the URL whose '/model/info' returns JSON), not a UI/SSO page, and\n"
+            "  that LITELLM_API_KEY is a valid key for it. First bytes received:\n\n"
+            "  {}".format(url, ctype or "unknown", len(body), snippet.replace("\n", "\n  "))
+        )
+
+    out = {}
+    for m in payload.get("data", []):
+        name = m.get("model_name")
+        info = m.get("model_info") or {}
+        if not name:
+            continue
+        out[name] = {
+            "input": per_million(info.get("input_cost_per_token"), factor),
+            "output": per_million(info.get("output_cost_per_token"), factor),
+            "cache_write": per_million(info.get("cache_creation_input_token_cost"), factor),
+            "cache_read": per_million(info.get("cache_read_input_token_cost"), factor),
+            "max_input": info.get("max_input_tokens"),
+            "max_output": info.get("max_output_tokens"),
+        }
+
+    if not out:
+        sys.exit("error: gateway returned no models at " + url)
+
+    n_models = len(out)
+    # Provenance (claude-recall ignores keys starting with "_").
+    out["_meta"] = {
+        "source": url,
+        "models": n_models,
+        "discount_pct": args.discount,
+        "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    note = "wrote {} models".format(n_models)
+    if args.discount:
+        note += " ({:g}% discount baked in)".format(args.discount)
+
+    if args.out == "-":
+        json.dump(out, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        print(note + " to stdout from " + url, file=sys.stderr)
+    else:
+        with open(args.out, "w") as f:
+            json.dump(out, f, indent=2, sort_keys=True)
+            f.write("\n")
+        print("{} to {} (from {})".format(note, args.out, url), file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

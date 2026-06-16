@@ -1,0 +1,16 @@
+# Local Claude Code settings (machine-local; contains user paths)
+.claude/
+
+# Local FewWord scratch/memory (machine-local)
+.fewword/
+
+# Python
+__pycache__/
+*.pyc
+
+# Browser/screenshot artifacts (Playwright MCP, local captures)
+.playwright-mcp/
+*.png
+
+# Generated pricing overrides (gateway-specific; auto-loaded if present)
+pricing.json
