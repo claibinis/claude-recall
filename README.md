@@ -54,6 +54,8 @@ Claude Code Sessions (83 of 83)  [+ = transcript on disk, - = history only]
 
 Each row shows up to two prompts by default — the **opening** ask plus the **most recent** one — so you can tell both what a session was about and where it ended. Tune with `--lines N` (or set `CLAUDE_RECALL_LINES`); `-v` shows more. The `+`/`-` indicator shows whether the full transcript file is still on disk or only the message index remains.
 
+**Session colors.** If you've set a color in Claude Code with `/color` (red, blue, green, yellow, purple, orange, pink, cyan), claude-recall reads it from the transcript and shows that session's name and id in the **same color** Claude Code uses — so they line up at a glance. Coloring is automatic in a terminal, off when piped, and respects `NO_COLOR`. The row label also picks up a session's Claude Code title (`/name`) when you haven't set a claude-recall name yourself.
+
 ### Search by keyword(s)
 
 Just type your terms — bare words are a search:

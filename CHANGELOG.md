@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.1.0
+
+- **Session colors in the listing.** claude-recall now reads the color you set in
+  Claude Code with `/color` (stored per session as an `agent-color` line in the
+  transcript) and shows each session in that exact color — the `★ name` and the
+  session id are tinted to match what Claude Code shows on resume. Palette:
+  `red, blue, green, yellow, purple, orange, pink, cyan` (`default`/unset = none).
+  Coloring is automatic on a terminal, disabled when piped, and honors `NO_COLOR`.
+- **Session titles.** A session's Claude Code title (`/name` / `/rename` →
+  `custom_title`) is now surfaced as the row label when you haven't set a
+  claude-recall name of your own.
+- Internal: `parse_transcript` captures `color` + `custom_title`; `CACHE_VERSION`
+  bumped to 6 (the cache rebuilds automatically on first run).
+
 ## 3.0.1
 
 - Housekeeping: bump `__version__` to 3.0.1 and git-ignore a personal

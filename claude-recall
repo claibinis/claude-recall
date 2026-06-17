@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
 
-__version__ = "3.0.1"
+__version__ = "3.1.0"
 
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
@@ -32,7 +32,7 @@ SETTINGS_FILE = CLAUDE_DIR / "settings.json"
 # Metadata cache: transcripts are parsed once and reused until their mtime/size
 # changes. Bump CACHE_VERSION when the cached `meta` shape changes.
 CACHE_FILE = CLAUDE_DIR / ".claude-recall-cache.json"
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 # Sidecar store for user-assigned session names (never touches transcripts).
 NAMES_FILE = CLAUDE_DIR / ".claude-recall-names.json"
@@ -234,6 +234,8 @@ def parse_transcript(path):
         "cache_read_input_tokens": 0,
         "turns": 0,
         "peak_context": 0,
+        "color": "",          # last /color (agent-color line); "" = default
+        "custom_title": "",   # /name or /rename (Claude's own session title)
     }
 
     try:
@@ -255,6 +257,14 @@ def parse_transcript(path):
                     meta["cwd"] = d["cwd"]
                 if not meta["git_branch"] and d.get("gitBranch"):
                     meta["git_branch"] = d["gitBranch"]
+
+                # Session color (`/color`) and title (`/name`/`/rename`) are stored
+                # as their own transcript lines; the last value wins. Capture these
+                # before the message-only filter below (these lines carry no message).
+                if d.get("type") == "agent-color" and d.get("agentColor"):
+                    meta["color"] = d["agentColor"]
+                if d.get("customTitle"):
+                    meta["custom_title"] = d["customTitle"]
 
                 msg = d.get("message")
                 if not isinstance(msg, dict):
@@ -715,6 +725,26 @@ def session_prompts(session, limit=2):
     return out
 
 
+# Claude Code's `/color` palette → ANSI codes. These mirror the colors Claude
+# itself stores per session (the `agent-color` transcript line), so a session
+# shows the same color here as in Claude Code. "default"/unknown/"" = no color.
+_COLOR_CODES = {
+    "red": "31", "green": "32", "yellow": "33", "blue": "34",
+    "purple": "35", "cyan": "36", "pink": "38;5;213", "orange": "38;5;208",
+}
+# Color only when writing to a real terminal, and honor the NO_COLOR convention.
+USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def colorize(text, color):
+    """Wrap text in the ANSI code for a Claude session color. No-op when output
+    isn't a TTY, NO_COLOR is set, or the color is empty/default/unknown."""
+    code = _COLOR_CODES.get((color or "").lower())
+    if not USE_COLOR or not code:
+        return text
+    return "\033[{}m{}\033[0m".format(code, text)
+
+
 def print_session(session, transcripts, show_tokens=False, show_size=False,
                   show_context=False, lines=2, snippet="", show_last=False):
     """Print a single session entry."""
@@ -730,11 +760,15 @@ def print_session(session, transcripts, show_tokens=False, show_size=False,
 
     # The row leads with the opening substantive prompt (or the assigned name);
     # any further prompts print as indented continuation lines below.
-    name = session.get("name") or ""
+    color = session.get("color") or ""
+    # Prefer a claude-recall sidecar name; otherwise fall back to Claude's own
+    # session title (`/name`/`/rename` → custom_title) so named sessions show it.
+    name = session.get("name") or session.get("custom_title") or ""
     prompts = session_prompts(session, lines)
     head = prompts[0] if prompts else ""
-    if name:
-        label = f"★ {name} — {head}" if head else f"★ {name}"
+    name_tag = f"★ {name}" if name else ""
+    if name_tag:
+        label = f"{name_tag} — {head}" if head else name_tag
     else:
         label = head
 
@@ -764,12 +798,23 @@ def print_session(session, transcripts, show_tokens=False, show_size=False,
     elif show_context:
         extras += f"  [{'---':>10}]"
 
-    # Truncate label to fit remaining width
+    # Truncate label to fit remaining width (on plain text, before coloring so
+    # the ANSI escapes don't get counted or sliced mid-sequence).
     max_msg = max(30, 120 - len(extras) - 50)
     label = label[:max_msg]
 
+    # Apply the session's own color: highlight the ★ name (the part the user
+    # asked for) and tint the id so colored sessions are taggable even unnamed.
+    if color:
+        id_disp = colorize(sid[:8], color)
+        if name_tag:
+            nt = name_tag if len(name_tag) <= len(label) else label
+            label = colorize(nt, color) + label[len(nt):]
+    else:
+        id_disp = sid[:8]
+
     print(
-        f"  {start}  [{sid[:8]}] {has_transcript} "
+        f"  {start}  [{id_disp}] {has_transcript} "
         f"({count:>3} msgs)  {proj:<26}{extras}  {label}"
     )
 
