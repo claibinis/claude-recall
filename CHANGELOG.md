@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.2.0
+
+- **`claude-recall doctor`** — one command to check that everything's wired up:
+  PATH symlink, Claude Code hooks, MCP registration, pricing file, and the metadata
+  cache. Each line reports ✓/✗, and `doctor --fix` repairs what it safely can
+  (re-link, re-install hooks, re-register MCP). Runs without building the index.
+- **Color/title follow-through** (building on 3.1.0):
+  - `--color NAME` filters the listing/search to one session color.
+  - `--sort color` groups sessions by color (uncolored last).
+  - A session's Claude Code title (`/name`) is now **searchable**, alongside its color.
+  - `export` (csv/json) now includes `title` and `color` columns/fields.
+
 ## 3.1.0
 
 - **Session colors in the listing.** claude-recall now reads the color you set in

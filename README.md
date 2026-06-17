@@ -27,6 +27,8 @@ cd claude-recall
 
 That's it. `setup` puts `claude-recall` on your PATH, installs the Claude Code hooks (auto-names sessions `folder@branch`, prunes throwaway ones on exit), registers the [MCP server](#let-claude-recall-sessions-itself--mcp-server) so Claude can recall sessions mid-conversation, and offers to set up custom pricing. It's idempotent, and `./claude-recall setup --uninstall` reverses all of it.
 
+Not sure everything's wired up? **`claude-recall doctor`** checks the PATH link, hooks, MCP registration, pricing, and cache, and `claude-recall doctor --fix` repairs what it can.
+
 **Requirements:** Python 3.6+ (no external dependencies). Prefer to do nothing global? Just run `./claude-recall` from the clone — everything works without `setup`.
 
 ### Windows
@@ -325,6 +327,7 @@ claude-recall --detail --project ete -n 3
 | `-f`, `--full-text` | Include transcript content in search (shows snippets) | |
 | `--project` | Filter by project (directory) name | |
 | `--branch` | Filter by git branch (substring) | |
+| `--color` | Filter by Claude Code session color (`cyan`, `red`, …) | |
 | `--since` / `--until` | Filter by last activity: `7d`/`24h`/`2w` or `YYYY-MM-DD` | |
 | `--date` | Filter by date prefix | |
 | `--all`, `--include-deleted` | Include history-only sessions whose transcript was deleted (hidden by default) | |
@@ -338,7 +341,7 @@ claude-recall --detail --project ete -n 3
 | **Listing** |
 | `-n`, `--limit` | Limit number of results | |
 | `--reverse` | Show oldest first | |
-| `--sort` | Sort by: `date` (start), `recent` (last activity), `tokens`, `cost`, `size`, `messages` | |
+| `--sort` | Sort by: `date` (start), `recent` (last activity), `tokens`, `cost`, `size`, `messages`, `color` (groups by session color) | |
 
 With no command, `claude-recall` lists sessions using the flags above. The filters
 (and, for `export`, the display/ordering flags too) also apply to the commands noted below.
@@ -350,6 +353,7 @@ Core (shown in `claude-recall -h`):
 | Command | Description | Command flags |
 |---------|-------------|---------------|
 | `setup` | One-command install: PATH + hooks + MCP (+ optional pricing) | `--uninstall`, `-y` |
+| `doctor` | Check PATH/hooks/MCP/pricing/cache are wired up | `--fix` (repair what's safe) |
 | `search TERMS` | Search sessions (same as bare `claude-recall TERMS`) | all filter/display/sort flags |
 | `show ID` | Print a session's conversation | `--grep TERMS` (only matching turns, highlighted), `--last N` (final N turns), `--no-summary` (skip compaction recaps), `--text-only` (prose-only turns) |
 | `resume ID` | Print the command to resume a session (with `cd`) | `--exec` (run it instead of printing) |

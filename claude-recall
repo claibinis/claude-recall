@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
@@ -1575,6 +1575,126 @@ def cmd_setup(uninstall=False, assume_yes=False):
     print("  claude-recall deploy     search for 'deploy'")
 
 
+def _hooks_installed():
+    """Set of hook events whose settings.json group runs our hook command."""
+    if not SETTINGS_FILE.exists():
+        return set()
+    try:
+        with open(SETTINGS_FILE) as f:
+            settings = json.load(f)
+    except (IOError, OSError, ValueError):
+        return set()
+    hooks = settings.get("hooks", {}) if isinstance(settings, dict) else {}
+    return {ev for ev in _HOOK_EVENTS
+            if any(_group_is_ours(g, _HOOK_TAGS[ev]) for g in hooks.get(ev, []))}
+
+
+def _mcp_registered():
+    """Best-effort: is a claude-recall MCP server present in ~/.claude.json?
+    Checks user scope and every project scope. No subprocess (fast, offline)."""
+    cfg = Path.home() / ".claude.json"
+    if not cfg.exists():
+        return False
+    try:
+        with open(cfg) as f:
+            data = json.load(f)
+    except (IOError, OSError, ValueError):
+        return False
+    if "claude-recall" in (data.get("mcpServers") or {}):
+        return True
+    return any(
+        isinstance(p, dict) and "claude-recall" in (p.get("mcpServers") or {})
+        for p in (data.get("projects") or {}).values()
+    )
+
+
+def cmd_doctor(fix=False):
+    """Report the health of claude-recall's integrations — PATH, hooks, MCP,
+    pricing, cache — and with --fix repair what it safely can. Diagnostic wrapper
+    over the same primitives `setup` uses; needs no index, so it runs early."""
+    script = os.path.realpath(__file__)
+    OK, BAD, INFO = "✓", "✗", "•"
+    broken = set()
+
+    print("claude-recall doctor\n")
+
+    # 1. PATH
+    found = shutil.which("claude-recall")
+    if found and os.path.realpath(found) == script:
+        print(f"  {OK} on PATH  ({found})")
+    else:
+        print(f"  {BAD} not on PATH  (running from {script})")
+        broken.add("path")
+
+    # 2. Hooks
+    missing = [ev for ev in _HOOK_EVENTS if ev not in _hooks_installed()]
+    if not missing:
+        print(f"  {OK} Claude Code hooks installed  ({', '.join(_HOOK_EVENTS)})")
+    else:
+        print(f"  {BAD} hooks missing: {', '.join(missing)}")
+        broken.add("hooks")
+
+    # 3. MCP server
+    has_claude = shutil.which("claude") is not None
+    if _mcp_registered():
+        print(f"  {OK} MCP server registered with Claude Code")
+    elif has_claude:
+        print(f"  {BAD} MCP server not registered")
+        broken.add("mcp")
+    else:
+        print(f"  {INFO} 'claude' CLI not found — skipped MCP check")
+
+    # 4. Pricing
+    pf = _pricing_file()
+    if pf and Path(pf).exists():
+        print(f"  {OK} custom pricing in use  ({pf})")
+    else:
+        print(f"  {INFO} using built-in pricing  (drop a pricing.json next to the script to override)")
+
+    # 5. Cache
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE) as f:
+                data = json.load(f)
+            v = data.get("version")
+            if v == CACHE_VERSION:
+                print(f"  {OK} cache healthy  (v{v}, {len(data.get('entries', {}))} sessions)")
+            else:
+                print(f"  {INFO} cache will rebuild  (v{v} → v{CACHE_VERSION})")
+        except (IOError, OSError, ValueError):
+            print(f"  {INFO} cache unreadable — rebuilds on next run")
+    else:
+        print(f"  {INFO} no cache yet  (builds on first run)")
+
+    print()
+    if not broken:
+        print("Everything looks healthy.")
+        return
+    if not fix:
+        print(f"{len(broken)} issue(s). Re-run with --fix to repair (or run: claude-recall setup).")
+        return
+
+    print("Repairing…")
+    if "path" in broken:
+        try:
+            bindir = Path.home() / ".local" / "bin"
+            link = bindir / "claude-recall"
+            bindir.mkdir(parents=True, exist_ok=True)
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            link.symlink_to(script)
+            print(f"  {OK} linked into {link}")
+        except OSError as e:
+            print(f"  {BAD} couldn't link: {e}")
+    if "hooks" in broken:
+        cmd_install_hooks()
+    if "mcp" in broken and has_claude:
+        rc = subprocess.call(["claude", "mcp", "add", "claude-recall", "--", script, "mcp"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"  {OK} registered MCP server" if rc == 0 else f"  {INFO} 'claude mcp add' returned nonzero")
+    print("\nDone. Re-run 'claude-recall doctor' to confirm.")
+
+
 # ─── MCP server (stdio, newline-delimited JSON-RPC 2.0; zero dependencies) ────
 #
 # Exposes the existing index as MCP tools so Claude Code can recall past
@@ -1902,7 +2022,10 @@ def filter_sessions(sessions, transcripts, args):
         terms = parse_terms(args.search)
         text_matches = set()
         for sid, s in sessions.items():
-            hay = " ".join(s["messages"] + [s.get("name", ""), s.get("project", "")])
+            hay = " ".join(s["messages"] + [
+                s.get("name", ""), s.get("project", ""),
+                s.get("custom_title", ""), s.get("color", ""),
+            ])
             if terms_match(hay, terms, args.any):
                 text_matches.add(sid)
                 snip = first_snippet(s["messages"], terms)
@@ -1921,6 +2044,10 @@ def filter_sessions(sessions, transcripts, args):
     if args.branch:
         bf = args.branch.lower()
         results = [s for s in results if bf in (s.get("git_branch", "") or "").lower()]
+
+    if getattr(args, "color", None):
+        cf = args.color.lower()
+        results = [s for s in results if (s.get("color", "") or "").lower() == cf]
 
     if args.date:
         results = [s for s in results if format_timestamp(s["first_ts"]).startswith(args.date)]
@@ -1951,6 +2078,8 @@ def filters_scope(args):
         parts.append(f"project={args.project}")
     if args.branch:
         parts.append(f"branch={args.branch}")
+    if getattr(args, "color", None):
+        parts.append(f"color={args.color}")
     if args.date:
         parts.append(f"date={args.date}")
     if args.since:
@@ -1965,6 +2094,7 @@ claude-recall {ver} — search & manage your Claude Code sessions
 
 Setup (once)
   claude-recall setup            Put on PATH + install hooks + register MCP server
+  claude-recall doctor           Check everything's wired up ( --fix to repair )
 
 Everyday
   claude-recall                  List recent sessions
@@ -2003,6 +2133,7 @@ def build_parser():
     )
     fg.add_argument("--project", help="Filter by project name (matches the directory name)")
     fg.add_argument("--branch", help="Filter by git branch (substring)")
+    fg.add_argument("--color", help="Filter by Claude Code session color (red/blue/green/yellow/purple/orange/pink/cyan)")
     fg.add_argument("--date", help="Filter by date prefix (e.g. 2026-04)")
     fg.add_argument("--since", metavar="WHEN", help="Only sessions active since 7d/24h/2w or YYYY-MM-DD")
     fg.add_argument("--until", metavar="WHEN", help="Only sessions active before 7d/24h/2w or YYYY-MM-DD")
@@ -2022,8 +2153,8 @@ def build_parser():
     og.add_argument("-n", "--limit", type=int, default=0, help="Limit results")
     og.add_argument("--reverse", action="store_true", help="Show oldest first")
     og.add_argument(
-        "--sort", choices=["date", "recent", "tokens", "cost", "size", "messages"],
-        default="date", help="Sort order (default: date; 'recent' = last activity)",
+        "--sort", choices=["date", "recent", "tokens", "cost", "size", "messages", "color"],
+        default="date", help="Sort order (default: date; 'recent' = last activity; 'color' groups by session color)",
     )
 
     # Listing-view options shared by the default path and the `search` command.
@@ -2063,6 +2194,9 @@ def build_parser():
     p_setup = sub.add_parser("setup", help="One-command install: PATH + hooks + MCP (+ optional pricing)")
     p_setup.add_argument("--uninstall", action="store_true", help="Remove the integrations instead")
     p_setup.add_argument("-y", "--yes", action="store_true", help="Accept defaults without prompting")
+
+    p_doctor = sub.add_parser("doctor", help="Check that PATH/hooks/MCP/pricing/cache are wired up (--fix to repair)")
+    p_doctor.add_argument("--fix", action="store_true", help="Repair what can be fixed safely")
 
     p_search = sub.add_parser("search", parents=[filters, display, ordering, view],
                               help="Search sessions by keyword(s) — same as bare `claude-recall TERMS`")
@@ -2127,8 +2261,8 @@ def build_parser():
 
 # Subcommand names — used to tell a command apart from bare-word search terms.
 _COMMANDS = frozenset({
-    "setup", "search", "show", "resume", "stats", "export", "name", "remove",
-    "clean", "forget", "install-hooks", "hook", "mcp",
+    "setup", "doctor", "search", "show", "resume", "stats", "export", "name",
+    "remove", "clean", "forget", "install-hooks", "hook", "mcp",
 })
 
 
@@ -2161,6 +2295,9 @@ def main():
     # hooks must be fast, and the MCP server owns its own index lifecycle.
     if args.command == "setup":
         cmd_setup(uninstall=args.uninstall, assume_yes=args.yes)
+        return
+    if args.command == "doctor":
+        cmd_doctor(fix=args.fix)
         return
     if args.command == "hook":
         if args.event == "session-start":
@@ -2236,6 +2373,12 @@ def main():
         results.sort(key=lambda x: x.get("last_ts", 0), reverse=not args.reverse)
     elif args.sort == "messages":
         results.sort(key=lambda x: x["msg_count"], reverse=not args.reverse)
+    elif args.sort == "color":
+        # Group by color (uncolored last), then most-recent within each group.
+        order = {c: i for i, c in enumerate(_COLOR_CODES)}
+        results.sort(key=lambda x: x.get("last_ts", 0), reverse=True)
+        results.sort(key=lambda x: order.get((x.get("color") or "").lower(), len(order)),
+                     reverse=args.reverse)
     elif args.sort in ("tokens", "cost", "size"):
         scored = []
         for s in results:
@@ -2262,7 +2405,7 @@ def main():
     if cmd == "export" and args.format == "csv":
         output = io.StringIO()
         writer = csv.writer(output)
-        headers = ["session_id", "name", "start", "end", "project", "branch", "messages", "has_transcript", "first_message"]
+        headers = ["session_id", "name", "title", "color", "start", "end", "project", "branch", "messages", "has_transcript", "first_message"]
         if args.tokens:
             headers += ["input_tokens", "output_tokens", "cache_write", "cache_read", "est_cost"]
         if args.size:
@@ -2274,7 +2417,8 @@ def main():
         for s in results:
             first_msg = next((m for m in s["messages"] if m and len(m) > 5), "")
             row = [
-                s["id"], s.get("name", ""), format_timestamp(s["first_ts"]), format_timestamp(s["last_ts"]),
+                s["id"], s.get("name", ""), s.get("custom_title", ""), s.get("color", ""),
+                format_timestamp(s["first_ts"]), format_timestamp(s["last_ts"]),
                 s["project"], s.get("git_branch", ""), s["msg_count"], s["id"] in transcripts, first_msg[:200],
             ]
             if args.tokens:
@@ -2302,6 +2446,8 @@ def main():
             entry = {
                 "session_id": s["id"],
                 "name": s.get("name", ""),
+                "title": s.get("custom_title", ""),
+                "color": s.get("color", ""),
                 "start": format_timestamp(s["first_ts"]),
                 "end": format_timestamp(s["last_ts"]),
                 "project": s["project"],
