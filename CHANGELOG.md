@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.3.0
+
+- **Secret redaction.** `show` and full-text (`-f`) snippets now mask obvious
+  secrets before printing — API keys (`sk-…`, `ghp_…`, Google/AWS keys),
+  `Authorization: Bearer …`, `password`/`token`/`secret = …` values, and PEM
+  private-key blocks — keeping a recognizable prefix (e.g. `sk-«redacted»`).
+  On by default; pass `--no-redact` to see raw content. Only the displayed output
+  is masked — transcripts on disk are never modified.
+- **`claude-recall update`** — for a `git clone` install, pulls the latest
+  (`git pull --ff-only`) and, when the version changed, re-syncs the hooks and MCP
+  registration. No-op for non-git installs.
+
 ## 3.2.0
 
 - **`claude-recall doctor`** — one command to check that everything's wired up:

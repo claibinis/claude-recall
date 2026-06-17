@@ -90,6 +90,8 @@ claude-recall show cf21fedb --text-only        # drop tool-only turns (prose onl
 
 For a long session, `--last N` ("what was I doing at the end of this?") and `--grep` are the way in — a full dump of an 800-prompt session is tens of thousands of lines. Consecutive assistant messages (prose + their tool calls) are merged into one turn, and repeated tools collapse to `Bash ×3`. `--no-summary` hides the "session continued from a previous conversation" recap turns; `--text-only` drops any turn with no prose.
 
+**Secrets are masked.** `show` and full-text (`-f`) snippets redact obvious secrets before printing — API keys (`sk-…`, `ghp_…`, AWS/Google keys), `Bearer` tokens, `password`/`token`/`secret = …` values, and private-key blocks become e.g. `sk-«redacted»`. It only affects what's printed (transcripts are untouched); pass `--no-redact` to see raw content.
+
 ### Filter by project, branch, or time
 
 ```bash

@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import defaultdict
 
-__version__ = "3.2.0"
+__version__ = "3.3.0"
 
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_DIR", Path.home() / ".claude"))
 HISTORY_FILE = CLAUDE_DIR / "history.jsonl"
@@ -488,14 +488,14 @@ def make_snippet(text, term, width=88):
     text = re.sub(r"\s+", " ", text).strip()
     i = text.lower().find(term.lower())
     if i < 0:
-        return text[:width]
+        return redact_secrets(text[:width])
     start = max(0, i - width // 3)
     snip = text[start:start + width]
     if start > 0:
         snip = "…" + snip
     if start + width < len(text):
         snip = snip + "…"
-    return snip
+    return redact_secrets(snip)
 
 
 def first_snippet(messages, terms):
@@ -743,6 +743,36 @@ def colorize(text, color):
     if not USE_COLOR or not code:
         return text
     return "\033[{}m{}\033[0m".format(code, text)
+
+
+# Secret redaction for displayed output (`show`, full-text snippets). On by
+# default; `--no-redact` flips REDACT off. Only masks what's printed — never the
+# transcripts on disk. Recognizable prefixes are kept so the hit stays readable.
+REDACT = True
+_SECRET_PATTERNS = [
+    (re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9._\-]{12,}"), "sk-«redacted»"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"), "gh«redacted»"),
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}"), "xox-«redacted»"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AKIA«redacted»"),
+    (re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b"), "AIza«redacted»"),
+    (re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]{16,}"), r"\1«redacted»"),
+    (re.compile(
+        r"(?i)\b(api[_-]?key|access[_-]?token|client[_-]?secret|secret|password|passwd|token)"
+        r"(\s*[\"']?\s*[:=]\s*[\"']?)([A-Za-z0-9._\-/+]{16,})"
+    ), r"\1\2«redacted»"),
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+     "«redacted private key»"),
+]
+
+
+def redact_secrets(text):
+    """Mask obvious secrets (API keys, tokens, Bearer creds, private keys) in
+    text about to be displayed. No-op when REDACT is off or text is empty."""
+    if not REDACT or not text:
+        return text
+    for pat, repl in _SECRET_PATTERNS:
+        text = pat.sub(repl, text)
+    return text
 
 
 def print_session(session, transcripts, show_tokens=False, show_size=False,
@@ -995,6 +1025,7 @@ def cmd_show(sid_prefix, sessions, transcripts, grep=None, last=0,
 def _show_turn(label, text, tools, terms):
     """Render one collected turn (text + collapsed tool markers)."""
     text = re.sub(r"\s+", " ", text).strip()
+    text = redact_secrets(text)
     if terms and text:
         text = highlight(text, terms)
     print(f"\n  {label}")
@@ -1695,6 +1726,50 @@ def cmd_doctor(fix=False):
     print("\nDone. Re-run 'claude-recall doctor' to confirm.")
 
 
+def cmd_update():
+    """Update a `git clone` install: pull latest, then re-sync hooks/MCP if the
+    version changed. No-op for non-git installs (nothing to pull)."""
+    script = os.path.realpath(__file__)
+    repo = os.path.dirname(script)
+    if not os.path.isdir(os.path.join(repo, ".git")):
+        print("Not a git checkout — `update` only works for a `git clone` install.")
+        print(f"  ({script})")
+        return
+
+    old = __version__
+    print(f"Updating claude-recall in {repo} …")
+    try:
+        out = subprocess.run(["git", "-C", repo, "pull", "--ff-only"],
+                             capture_output=True, text=True, timeout=120)
+    except Exception as e:
+        print(f"  git pull failed: {e}")
+        return
+    sys.stdout.write(out.stdout)
+    if out.returncode != 0:
+        sys.stderr.write(out.stderr)
+        print(f"  Update failed. Resolve manually:  git -C {shlex.quote(repo)} pull")
+        return
+
+    new = old
+    try:
+        with open(script) as f:
+            for ln in f:
+                if ln.startswith("__version__"):
+                    new = ln.split('"')[1]
+                    break
+    except (IOError, OSError, IndexError):
+        pass
+
+    if new != old:
+        cmd_install_hooks()  # idempotent; picks up any hook changes
+        if shutil.which("claude"):
+            subprocess.call(["claude", "mcp", "add", "claude-recall", "--", script, "mcp"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"\nUpdated {old} → {new}. Restart running sessions to pick it up.")
+    else:
+        print(f"\nAlready up to date ({old}).")
+
+
 # ─── MCP server (stdio, newline-delimited JSON-RPC 2.0; zero dependencies) ────
 #
 # Exposes the existing index as MCP tools so Claude Code can recall past
@@ -2095,6 +2170,7 @@ claude-recall {ver} — search & manage your Claude Code sessions
 Setup (once)
   claude-recall setup            Put on PATH + install hooks + register MCP server
   claude-recall doctor           Check everything's wired up ( --fix to repair )
+  claude-recall update           Pull the latest version (git-clone install)
 
 Everyday
   claude-recall                  List recent sessions
@@ -2167,6 +2243,7 @@ def build_parser():
     )
     vg.add_argument("-v", "--verbose", action="store_true", help="Show more prompt lines per session")
     vg.add_argument("--detail", action="store_true", help="Expanded per-session breakdown instead of inline")
+    vg.add_argument("--no-redact", action="store_true", help="Don't mask secrets in full-text snippets")
 
     # ── Top-level parser (no command → listing) ──
     parser = argparse.ArgumentParser(
@@ -2198,6 +2275,8 @@ def build_parser():
     p_doctor = sub.add_parser("doctor", help="Check that PATH/hooks/MCP/pricing/cache are wired up (--fix to repair)")
     p_doctor.add_argument("--fix", action="store_true", help="Repair what can be fixed safely")
 
+    sub.add_parser("update", help="Update a git-clone install (git pull + re-sync hooks/MCP)")
+
     p_search = sub.add_parser("search", parents=[filters, display, ordering, view],
                               help="Search sessions by keyword(s) — same as bare `claude-recall TERMS`")
     p_search.add_argument("query", nargs="+", metavar="TERMS", help="Keywords (AND by default; --any for OR)")
@@ -2208,6 +2287,7 @@ def build_parser():
     p_show.add_argument("--grep", metavar="TERMS", help="Only show turns matching these terms")
     p_show.add_argument("--no-summary", action="store_true", help="Skip compaction-summary turns")
     p_show.add_argument("--text-only", action="store_true", help="Only turns with prose (drop tool-only turns)")
+    p_show.add_argument("--no-redact", action="store_true", help="Don't mask secrets (API keys, tokens) in the output")
 
     p_resume = sub.add_parser("resume", help="Print/run the command to resume a session")
     p_resume.add_argument("id", metavar="ID", help="Session ID prefix")
@@ -2261,8 +2341,8 @@ def build_parser():
 
 # Subcommand names — used to tell a command apart from bare-word search terms.
 _COMMANDS = frozenset({
-    "setup", "doctor", "search", "show", "resume", "stats", "export", "name",
-    "remove", "clean", "forget", "install-hooks", "hook", "mcp",
+    "setup", "doctor", "update", "search", "show", "resume", "stats", "export",
+    "name", "remove", "clean", "forget", "install-hooks", "hook", "mcp",
 })
 
 
@@ -2284,6 +2364,9 @@ def main():
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    global REDACT
+    REDACT = not getattr(args, "no_redact", False)
+
     if args.help_all:
         parser.print_help()
         return
@@ -2298,6 +2381,9 @@ def main():
         return
     if args.command == "doctor":
         cmd_doctor(fix=args.fix)
+        return
+    if args.command == "update":
+        cmd_update()
         return
     if args.command == "hook":
         if args.event == "session-start":
